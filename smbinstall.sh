@@ -655,9 +655,11 @@ do_update() {
                 ;;
         esac
         [ -f "$dst" ] || continue
-        cp -f "$dst" "${dst}.bak" &>/dev/null
+        mkdir -p "$SMBSTACK_WWW/backups"
+        cp -f "$dst" "$SMBSTACK_WWW/backups/$fname.bak" &>/dev/null
         cp -f "$src" "$dst"
-        sed -i "s|your_user|$LOCAL_USER|g" "$dst"
+        escaped_user=$(printf '%s' "$LOCAL_USER" | sed 's/[&/\\|]/\\&/g')
+        sed -i "s|your_user|$escaped_user|g" "$dst"
         sed -i "s|compartida|$SHARED_NAME|g" "$dst"
         echo "  Updated: $fname"
     done

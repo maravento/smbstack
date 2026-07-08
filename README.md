@@ -391,7 +391,7 @@ sudo pdbedit -L
   </tr>
 </table>
 
-#### Dual-access layout / Estructura de doble acceso
+#### Dual-access layout
 
 <table>
   <tr>
@@ -431,7 +431,7 @@ sudo pdbedit -L
         └── invoice.pdf
 ```
 
-#### File versioning / Versionado de archivos
+#### File versioning
 
 <table>
   <tr>
@@ -480,22 +480,22 @@ recycle:noversions = *.dat,*.ini
   </tr>
 </table>
 
-#### Configuration reference / Referencia de configuración
+#### Configuration reference
 
-| Parameter | Value | Description | Descripción |
-|-----------|-------|-------------|-------------|
-| `recycle:repository` | `.recycle/%U` | Path of the recycle bin inside the share. `%U` is replaced at runtime by the effective system user: `smbguest` for SMB clients, `www-data` for the web interface. Creates one subdirectory per access channel. | Ruta de la papelera dentro del share. `%U` se reemplaza en tiempo de ejecución por el usuario del sistema efectivo: `smbguest` para clientes SMB, `www-data` para la interfaz web. Crea un subdirectorio por canal de acceso. |
-| `recycle:directory_mode` | `0775` | Permissions for each per-user recycle subdirectory that Samba creates automatically. `0775` allows the `sambashare` group (which includes both `smbguest` and `www-data`) to read and write. The Samba default is `0700` (owner only), which would block group access. | Permisos del subdirectorio de papelera por usuario que Samba crea automáticamente. `0775` permite al grupo `sambashare` (que incluye tanto `smbguest` como `www-data`) leer y escribir. El valor por defecto de Samba es `0700` (solo propietario), lo que bloquearía el acceso de grupo. |
-| `recycle:keeptree` | `yes` | Preserves the original directory path inside the recycle bin. A file deleted from `DOCUMENTS/Q1/report.docx` is stored as `.recycle/smbguest/DOCUMENTS/Q1/report.docx`, making it easy to trace its origin. | Preserva la ruta original del directorio dentro de la papelera. Un archivo eliminado de `DOCUMENTS/Q1/report.docx` se almacena como `.recycle/smbguest/DOCUMENTS/Q1/report.docx`, facilitando rastrear su origen. |
-| `recycle:versions` | `yes` | Keeps multiple copies when the same file is deleted more than once. Each new copy is named `Copy #N of filename`. Set to `no` to keep only the most recent deleted copy. | Conserva múltiples copias cuando el mismo archivo se elimina más de una vez. Cada nueva copia se nombra `Copy #N of nombre`. Establécelo en `no` para conservar solo la copia eliminada más reciente. |
-| `recycle:noversions` | `*.dat,*.ini` | File patterns excluded from versioning. These files are still sent to the recycle bin, but repeated deletions overwrite the existing copy instead of creating a numbered duplicate. Useful for config snapshots, runtime data, and similar low-value files. Only applies when `recycle:versions = yes`. | Patrones de archivos excluidos del versionado. Estos archivos igualmente van a la papelera, pero eliminaciones repetidas sobreescriben la copia existente en lugar de crear una nueva numerada. Útil para snapshots de configuración, datos de runtime y similares. Solo aplica cuando `recycle:versions = yes`. |
-| `recycle:touch` | `yes` | Updates the file's access time (`atime`) when it is moved to the bin. Useful for knowing when a file was recycled independently of its original modification date. | Actualiza el tiempo de acceso (`atime`) del archivo al moverlo a la papelera. Útil para saber cuándo fue reciclado independientemente de su fecha de modificación original. |
-| `recycle:exclude` | `*.tmp,*.temp,*.o,~$*,*.~??,*.log,*.trace,*.TMP,*.asv` | File patterns that are permanently deleted instead of recycled. Covers temporary files, Office lock files (`~$*`), Matlab autosave files (`*.asv`), and compiled object files (`*.o`). | Patrones de archivos que se eliminan permanentemente en lugar de reciclarse. Cubre archivos temporales, archivos de bloqueo de Office (`~$*`), autoguardados de Matlab (`*.asv`) y archivos objeto compilados (`*.o`). |
-| `recycle:exclude_dir` | `/temp,/tmp,/cache,/.Trash-1000` | Directories whose files bypass the recycle bin and are permanently deleted. Paths are relative to the share root. `/.Trash-1000` is the trash directory that some Linux desktop clients create directly on the share. | Directorios cuyos archivos omiten la papelera y se eliminan permanentemente. Las rutas son relativas a la raíz del share. `/.Trash-1000` es el directorio de papelera que algunos clientes Linux de escritorio crean directamente en el share. |
-| `recycle:maxsize` | `1073741824` | Maximum file size in bytes (1 GB) that will be recycled. Files larger than this are permanently deleted to prevent a single file from filling up the bin. | Tamaño máximo de archivo en bytes (1 GB) que será reciclado. Los archivos mayores se eliminan permanentemente para evitar que un solo archivo llene la papelera. |
-| `hide files` | `/.recycle/` | Hides the `.recycle` directory from Windows Explorer and mapped drive views. The directory remains accessible from the server filesystem. | Oculta el directorio `.recycle/` de la vista del Explorador de Windows y las unidades de red mapeadas. El directorio sigue siendo accesible desde el sistema de archivos del servidor. |
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `recycle:repository` | `.recycle/%U` | Per-user recycle bin / Papelera por usuario |
+| `recycle:directory_mode` | `0775` | Group-writable recycle directory / Directorio escribible por el grupo |
+| `recycle:keeptree` | `yes` | Preserve original folder structure / Preservar estructura de carpetas |
+| `recycle:versions` | `yes` | Keep multiple versions of deleted files / Mantener múltiples versiones |
+| `recycle:noversions` | `*.dat,*.ini` | Exclude patterns from versioning / Excluir patrones del versionado |
+| `recycle:touch` | `yes` | Update access time when recycled / Actualizar tiempo de acceso al reciclar |
+| `recycle:exclude` | `Temporary, lock, log, and object file` | Permanently delete matching files / Eliminar permanentemente archivos que coincidan |
+| `recycle:exclude_dir` | `/temp,/tmp,/cache,/.Trash-1000` | Bypass recycle bin for directories / Omitir papelera para directorios |
+| `recycle:maxsize` | `1073741824` | Max file size (1 GB) / Tamaño máximo (1 GB) |
+| `hide files` | `/.recycle/` | Hide recycle directory from clients / Ocultar papelera a los clientes |
 
-#### Automatic cleanup / Limpieza automática
+#### Automatic cleanup
 
 <table>
   <tr>
@@ -542,7 +542,7 @@ sudo crontab -e
   </tr>
 </table>
 
-#### Configuration reference / Referencia de configuración
+#### Configuration reference
 
 | Parameter | Value | Description | Descripción |
 |-----------|-------|-------------|-------------|
@@ -553,7 +553,7 @@ sudo crontab -e
 | `full_audit:facility` | `LOCAL5` | rsyslog facility used to route audit entries to the dedicated log file, keeping them separate from general system logs. | Facility de rsyslog usada para enrutar las entradas de auditoría al archivo dedicado, manteniéndolas separadas de los logs generales del sistema. |
 | `full_audit:priority` | `notice` | Syslog priority level assigned to audit entries. | Nivel de prioridad syslog asignado a las entradas de auditoría. |
 
-#### Logged operations / Operaciones registradas
+#### Logged operations
 
 | Samba syscall | Triggered by | Desencadenado por |
 |---------------|--------------|-------------------|
@@ -675,6 +675,61 @@ sudo systemctl restart smbd
 
 **Optional tunnel:**
 - [Cloudflare Tunnel (start|stop|status) - Zero Trust Activation Recommended](https://raw.githubusercontent.com/maravento/vault/master/scripts/bash/cftunnel.sh)
+
+## NOTICE
+
+---
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <strong>This repository</strong>
+      <ul>
+        <li>May include third-party components.</li>
+        <li>Does not accept Pull Requests. Changes must be proposed via Issues.</li>
+      </ul>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <strong>Este repositorio</strong>
+      <ul>
+        <li>Puede incluir componentes de terceros.</li>
+        <li>No acepta Pull Requests. Los cambios deben proponerse mediante Issues.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+## STARGAZERS
+
+---
+
+[![Stargazers](https://bytecrank.com/nastyox/reporoster/php/stargazersSVG.php?user=maravento&repo=smbstack)](https://github.com/maravento/smbstack/stargazers)
+
+## SPONSOR THIS PROJECT
+
+---
+
+[![Image](https://raw.githubusercontent.com/maravento/winexternal/master/img/maravento-paypal.png)](https://paypal.me/maravento)
+
+## PROJECT LICENSES
+
+---
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      This project uses a dual-licensing model to balance software freedom with content protection:
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Este proyecto utiliza un modelo de licencia dual para equilibrar la libertad del software con la protección del contenido:
+    </td>
+  </tr>
+</table>
+
+| Content | Licensed Under |
+|---|---|
+|Scripts, Binaries, Infrastructure|[![GPL-3.0](https://img.shields.io/badge/Open_Core-GPLv3-blue.svg?style=for-the-badge&labelWidth=120&logoWidth=20)](https://www.gnu.org/licenses/gpl.txt)|
+|RAG, Workers, Specialized Modules, Docs|[![CC](https://img.shields.io/badge/Core_Engine-CC_BY--NC--ND_4.0-lightgrey.svg?style=for-the-badge&labelWidth=120&logoWidth=20)](https://creativecommons.org/licenses/by-nc-nd/4.0/)|
 
 ## DISCLAIMER
 
