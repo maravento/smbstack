@@ -119,7 +119,7 @@ select_shared_folder() {
                 chmod 2775 "$dir"
                 perms_ok=0
             fi
-        done < <(find "$SHARED_PATH" -mindepth 1 -type d)
+        done < <(find "$SHARED_PATH" -mindepth 1 -path "$SHARED_PATH/.recycle" -prune -o -type d -print)
 
         while IFS= read -r file; do
             file_owner=$(stat -c "%U" "$file")
@@ -135,7 +135,7 @@ select_shared_folder() {
                 chmod 664 "$file"
                 perms_ok=0
             fi
-        done < <(find "$SHARED_PATH" -mindepth 1 -type f)
+        done < <(find "$SHARED_PATH" -mindepth 1 -path "$SHARED_PATH/.recycle" -prune -o -type f -print)
 
         if ! getfacl "$SHARED_PATH" 2>/dev/null | grep -q "user:www-data:r-x"; then
             echo "  Missing ACL for www-data. Fixing..."
@@ -435,6 +435,9 @@ EOF
                     ;;
                 [Nn])
                     echo "Skipping smb.conf"
+                    echo "WARNING: existing smb.conf kept as-is. The [compartida] share and the"
+                    echo "         full_audit/recycle VFS were NOT applied. Add them manually or"
+                    echo "         re-run and choose 'y' to deploy the bundled smb.conf."
                     prompt_smb_net_iface
                     break
                     ;;
@@ -593,6 +596,10 @@ SERVER_IP="$SERVER_IP"
 SMBNAME="$SMBNAME"
 NETBIOS="${netbios_ans:-N}"
 
+# MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
+# file per request, by both smbapi.php and smbaudit-diagnostic.php.
+MAX_LOG_LINES="50000"
+
 # TRUSTED_PROXIES: IPv4 address(es), comma-separated, whose REMOTE_ADDR
 # is trusted to supply the real client IP via CF-Connecting-IP /
 # X-Forwarded-For headers (used by web/shared.php for audit logging).
@@ -627,7 +634,7 @@ do_update() {
     fi
 
     # load saved config
-    local allowed_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME NETBIOS TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE "
+    local allowed_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME NETBIOS TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
     while IFS= read -r line; do
         [[ "$line" =~ ^[A-Z_]+=.* ]] && {
             key="${line%%=*}"

@@ -14,6 +14,21 @@ if (PHP_SAPI !== 'cli') {
 
 $LOG_FILE = '/var/log/samba/log.audit';
 
+// MAX_LOG_LINES: same value smbapi.php reads from smbstack.env (installer
+// default: 50000). Kept in sync so this diagnostic reports the real limit.
+$MAX_LOG_LINES = 50000;
+$env_file = '/var/www/smbstack/smbstack.env';
+if (file_exists($env_file)) {
+    foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        if (strpos($line, 'MAX_LOG_LINES=') === 0) {
+            $val = str_replace(array('"', "'"), '', trim(substr($line, strlen('MAX_LOG_LINES='))));
+            if (ctype_digit($val) && (int)$val > 0) {
+                $MAX_LOG_LINES = (int)$val;
+            }
+        }
+    }
+}
+
 echo "=== SAMBA AUDIT LOG DIAGNOSTIC ===\n\n";
 
 // Check if file exists
@@ -111,13 +126,13 @@ if (count($sampleFailedLines) > 0) {
 
 // Check what the API would return
 echo "🔎 Checking API behavior...\n";
-$startLine = max(0, $totalLines - 10000);
+$startLine = max(0, $totalLines - $MAX_LOG_LINES);
 echo "   - API reads from line: " . number_format($startLine) . " to " . number_format($totalLines) . "\n";
-echo "   - That's " . number_format(min(10000, $totalLines)) . " lines being read by the API\n\n";
+echo "   - That's " . number_format(min($MAX_LOG_LINES, $totalLines)) . " lines being read by the API\n\n";
 
-if ($totalLines > 10000) {
-    echo "⚠️  WARNING: Your log file has more than 10,000 lines!\n";
-    echo "   The API only reads the last 10,000 lines from the current file.\n";
+if ($totalLines > $MAX_LOG_LINES) {
+    echo "⚠️  WARNING: Your log file has more than " . number_format($MAX_LOG_LINES) . " lines!\n";
+    echo "   The API only reads the last " . number_format($MAX_LOG_LINES) . " lines from the current file.\n";
     echo "   Older entries are not being read unless they're in rotated .gz files.\n\n";
 }
 

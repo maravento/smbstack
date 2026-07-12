@@ -8,7 +8,9 @@
 #
 # Monitors first-level subdirectories of the shared folder.
 # When a subdirectory exceeds WATCH_LIMIT_GB, the triggering file
-# is moved to .recycle bin.
+# is moved to .recycle/smbwatch/<YYYYMMDD>/ (this script's own channel,
+# separate from .recycle/smbguest/ used by SMB and .recycle/www-data/
+# used by the web interface).
 # Folders listed in WATCH_EXCLUDE are not monitored (no size limit).
 #
 # smbstack.env variables:
@@ -177,7 +179,7 @@ start() {
         exit 1
     fi
 
-    RECYCLE_DIR="$SHARED_PATH/.recycle"
+    RECYCLE_DIR="$SHARED_PATH/.recycle/smbwatch"
     WATCH_DIRS=()
     IFS=',' read -ra EXCLUDE_LIST <<< "${WATCH_EXCLUDE:-}"
     while IFS= read -r -d '' dir; do

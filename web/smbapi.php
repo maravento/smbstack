@@ -6,15 +6,18 @@
 
 header('Content-Type: application/json');
 
-$server_ip = '';
-$smb_net   = '';
-$env_file  = '/var/www/smbstack/smbstack.env';
+$server_ip     = '';
+$smb_net       = '';
+$max_log_lines = '';
+$env_file      = '/var/www/smbstack/smbstack.env';
 if (file_exists($env_file)) {
     foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         if (strpos($line, 'SERVER_IP=') === 0) {
             $server_ip = str_replace(array('"', "'"), '', trim(substr($line, strlen('SERVER_IP='))));
         } elseif (strpos($line, 'SMB_NET=') === 0) {
             $smb_net = str_replace(array('"', "'"), '', trim(substr($line, strlen('SMB_NET='))));
+        } elseif (strpos($line, 'MAX_LOG_LINES=') === 0) {
+            $max_log_lines = str_replace(array('"', "'"), '', trim(substr($line, strlen('MAX_LOG_LINES='))));
         }
     }
 }
@@ -34,7 +37,7 @@ header('Access-Control-Allow-Headers: Content-Type');
 function ip_in_cidr($ip, $cidr) {
     if (empty($cidr) || strpos($cidr, '/') === false) return false;
     list($subnet, $bits) = explode('/', $cidr, 2);
-    $bits        = (int)$bits;
+    $bits        = max(0, min(32, (int)$bits));
     $ip_long     = ip2long($ip);
     $subnet_long = ip2long($subnet);
     if ($ip_long === false || $subnet_long === false) return false;
@@ -66,7 +69,7 @@ define('LOG_FILES', [
     '/var/log/samba/log.audit.6.gz',
     '/var/log/samba/log.audit.7.gz'
 ]);
-define('MAX_LINES', 50000);
+define('MAX_LINES', ctype_digit((string)$max_log_lines) && (int)$max_log_lines > 0 ? (int)$max_log_lines : 50000);
 
 class SambaLogReader {
     private $logFiles;
@@ -78,7 +81,7 @@ class SambaLogReader {
     /**
      * Read log files and return parsed records
      */
-    public function getLogs($limit = 50000) {
+    public function getLogs($limit = MAX_LINES) {
         $allLogs = [];
         
         foreach ($this->logFiles as $logFile) {
@@ -116,7 +119,7 @@ class SambaLogReader {
     /**
      * Read a single file (normal or compressed)
      */
-    private function readSingleFile($filename, $limit = 50000) {
+    private function readSingleFile($filename, $limit = MAX_LINES) {
         $logs = [];
         
         if (substr($filename, -3) === '.gz') {
@@ -197,7 +200,7 @@ try {
     $reader = new SambaLogReader(LOG_FILES);
     
     if ($action === 'getLogs') {
-        $limit = min((int)($_GET['limit'] ?? 50000), 50000);
+        $limit = min((int)($_GET['limit'] ?? MAX_LINES), MAX_LINES);
         $logs = $reader->getLogs($limit);
         
         echo json_encode([

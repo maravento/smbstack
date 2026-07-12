@@ -121,8 +121,12 @@ $full_path = realpath($base_path . '/' . $request);
 // .recycle is hidden from the listing/size calculations below (it holds
 // other users' deleted files) — it must not be reachable by navigating
 // straight to it either, or the "hidden" bin is hidden in name only.
-$request_root = $request === '' ? '' : explode('/', $request)[0];
-if (!$full_path || ($full_path !== $base_real && strpos($full_path, $base_real . DIRECTORY_SEPARATOR) !== 0) || !is_dir($full_path) || $request_root === '.recycle') {
+$recycle_real = $base_real . DIRECTORY_SEPARATOR . '.recycle';
+if (!$full_path
+    || ($full_path !== $base_real && strpos($full_path, $base_real . DIRECTORY_SEPARATOR) !== 0)
+    || !is_dir($full_path)
+    || $full_path === $recycle_real
+    || strpos($full_path, $recycle_real . DIRECTORY_SEPARATOR) === 0) {
     $full_path = $base_real;
     $request   = '';
 }
@@ -271,11 +275,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
     $item_rel  = ltrim(preg_replace('/[\x00-\x1F]/', '', $_POST['recycle']), '/');
     $item_full = realpath($base_path . '/' . $item_rel);
     $recycle_root = $base_path . '/.recycle/www-data/' . date('Ymd');
-    $item_root = $item_rel === '' ? '' : explode('/', $item_rel)[0];
+    $inside_recycle = $item_full && ($item_full === $recycle_real
+                      || strpos($item_full, $recycle_real . DIRECTORY_SEPARATOR) === 0);
 
     // Don't allow recycling something that is already inside .recycle
     // (e.g. moving another channel's already-deleted file into ours).
-    if ($item_root !== '.recycle' && $item_full && strpos($item_full, $base_real . DIRECTORY_SEPARATOR) === 0) {
+    if (!$inside_recycle && $item_full && strpos($item_full, $base_real . DIRECTORY_SEPARATOR) === 0) {
         // Protect root-level items (files and directories)
         $depth = substr_count(str_replace($base_real, '', $item_full), DIRECTORY_SEPARATOR);
         if ($depth <= 1) {
