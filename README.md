@@ -2,8 +2,9 @@
 
 [![status-maintained](https://img.shields.io/badge/status-maintained-purple.svg)](https://github.com/maravento/smbstack)
 [![last commit](https://img.shields.io/github/last-commit/maravento/smbstack)](https://github.com/maravento/smbstack)
+[![Stargazers](https://img.shields.io/github/stars/maravento/smbstack?label=Stargazers)](https://github.com/maravento/smbstack/stargazers)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/maravento/smbstack)
-[![Twitter Follow](https://img.shields.io/twitter/follow/maraventostudio.svg?style=social)](https://twitter.com/maraventostudio)
+[![Twitter Follow](https://img.shields.io/twitter/follow/maraventostudio.svg)](https://twitter.com/maraventostudio)
 
 <!-- markdownlint-disable MD033 -->
 
@@ -703,12 +704,6 @@ sudo systemctl restart smbd
     </td>
   </tr>
 </table>
-
-## STARGAZERS
-
----
-
-[![Stargazers](https://bytecrank.com/nastyox/reporoster/php/stargazersSVG.php?user=maravento&repo=smbstack)](https://github.com/maravento/smbstack/stargazers)
 
 ## SPONSOR THIS PROJECT
 
