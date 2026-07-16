@@ -167,9 +167,9 @@ smbstack/
 
 ```
 /var/www/smbstack/
-│   └── tools/
-│       └── watchdir.log        # smbwatch.sh runtime log
 └── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
+
+/var/log/smbwatch.log           # smbwatch.sh runtime log
 
 /home/$local_user/shared/       # Shared folder (independent of the installer)
 ├── .recycle/                   # Recycle Bin (smbguest/, www-data/, smbwatch/)

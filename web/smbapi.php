@@ -174,7 +174,7 @@ class SambaLogReader {
      * Parse a Samba log line
      */
     private function parseLine($line) {
-        // Format: 2025-11-24T09:25:38.103362-05:00 user smbd_audit: 192.168.10.124|foo|shared|unlinkat|ok|/path/file
+        // Format: 2025-11-24T09:25:38.103362-05:00 user smbd_audit: 192.168.0.42|foo|shared|unlinkat|ok|/path/file
         
         $pattern = '/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+\S+\s+smbd_audit:\s+(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+)$/';
         

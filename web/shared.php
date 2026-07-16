@@ -282,7 +282,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
     // (e.g. moving another channel's already-deleted file into ours).
     if (!$inside_recycle && $item_full && strpos($item_full, $base_real . DIRECTORY_SEPARATOR) === 0) {
         // Protect root-level items (files and directories)
-        $depth = substr_count(str_replace($base_real, '', $item_full), DIRECTORY_SEPARATOR);
+        $rel_from_base = substr($item_full, strlen($base_real)); // anchor to real prefix
+        $depth = substr_count($rel_from_base, DIRECTORY_SEPARATOR);
         if ($depth <= 1) {
             $recycle_msg = 'protected';
         } else {
