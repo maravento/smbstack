@@ -22,6 +22,20 @@ if ! flock -n 200; then
     exit 1
 fi
 
+retry_cmd() {
+    local max_attempts=10
+    local attempt=1
+    until "$@"; do
+        if [ "$attempt" -ge "$max_attempts" ]; then
+            echo "ERROR: command failed after $max_attempts attempts: $*"
+            exit 1
+        fi
+        echo "WARNING: command failed (attempt $attempt/$max_attempts), retrying in 10s: $*"
+        attempt=$((attempt + 1))
+        sleep 10
+    done
+}
+
 ### PATHS
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 CONF_DIR="$SCRIPT_DIR/conf"
@@ -73,10 +87,9 @@ select_shared_folder() {
     echo "Shared folder setup"
     echo "-------------------"
     while true; do
-        read -p "Enter shared folder name (eng: shared / esp: compartida): " SHARED_NAME
-        if [ -z "$SHARED_NAME" ]; then
-            echo "ERROR: Folder name cannot be empty"
-        elif [[ "$SHARED_NAME" =~ [^a-zA-Z0-9_-] ]]; then
+        read -p "Enter shared folder name [shared]: " SHARED_NAME
+        SHARED_NAME="${SHARED_NAME:-shared}"
+        if [[ "$SHARED_NAME" =~ [^a-zA-Z0-9_-] ]]; then
             echo "ERROR: Folder name can only contain letters, numbers, hyphens and underscores"
             SHARED_NAME=""
         else
@@ -264,7 +277,7 @@ do_install() {
     a2enmod -q headers mime rewrite
 
     # samba packages
-    DEBIAN_FRONTEND=noninteractive apt-get install -y samba samba-common samba-common-bin smbclient winbind cifs-utils
+    retry_cmd env DEBIAN_FRONTEND=noninteractive apt-get install -y samba samba-common samba-common-bin smbclient winbind cifs-utils
 
     systemctl enable smbd.service
     systemctl enable winbind.service
@@ -304,6 +317,7 @@ do_install() {
     chmod 640 /var/log/smbwatch.log
 
     mkdir -p "$SMBSTACK_WEB"
+    cp -f "$WEB_DIR/index.php" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/smbaudit.html" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/smbapi.php" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/smbaudit-diagnostic.php" "$SMBSTACK_WEB/"
@@ -391,10 +405,13 @@ EOF
                 break
             fi
         done
+        local default_iface
+        default_iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1)
         echo "Available interfaces:"
         ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | sed 's/^/  /'
         while true; do
-            read -p "Enter network interface: " SMB_IFACE
+            read -p "Enter network interface [$default_iface]: " SMB_IFACE
+            SMB_IFACE="${SMB_IFACE:-$default_iface}"
             if [ -z "$SMB_IFACE" ]; then
                 echo "ERROR: Interface cannot be empty"
             elif ! ip link show "$SMB_IFACE" &>/dev/null; then
@@ -422,7 +439,8 @@ EOF
 
     if [ -f /etc/samba/smb.conf ]; then
         while true; do
-            read -p "smb.conf already exists. Overwrite? (y/n): " ow
+            read -p "smb.conf already exists. Overwrite? (y/n) [n]: " ow
+            ow="${ow:-n}"
             case "$ow" in
                 [Yy])
                     cp -f /etc/samba/smb.conf{,.bak}
@@ -476,7 +494,7 @@ EOF
     # cron: recycle bin weekly cleanup
     crontab -l 2>/dev/null > "/var/www/smbstack/crontab-$(date +%Y%m%d%H%M%S).bak" || true
     if ! crontab -l 2>/dev/null | grep -qF ".recycle"; then
-        (crontab -l 2>/dev/null; echo "@weekly find \"$SHARED_PATH/.recycle/\" -depth -mindepth 1 -mtime +7 -delete >/dev/null 2>&1") | crontab -
+        (crontab -l 2>/dev/null || true; echo "@weekly find \"$SHARED_PATH/.recycle/\" -depth -mindepth 1 -mtime +7 -delete >/dev/null 2>&1") | crontab -
     fi
 
     # service watchdog
@@ -485,65 +503,8 @@ EOF
     chmod +x "$SMBSTACK_TOOLS"/*.sh
     # cron: service watchdog at reboot
     if ! crontab -l 2>/dev/null | grep -qF "smbload.sh"; then
-        (crontab -l 2>/dev/null; echo "@reboot $SMBSTACK_TOOLS/smbload.sh") | crontab -
+        (crontab -l 2>/dev/null || true; echo "@reboot $SMBSTACK_TOOLS/smbload.sh") | crontab -
     fi
-
-    # netbios support (disabled by default)
-    while true; do
-        read -p "Enable NetBIOS support? (not recommended) (y/n): " netbios_ans
-        case "$netbios_ans" in
-            [Yy]|[Nn]) break ;;
-            *) echo "ERROR: Answer y or n" ;;
-        esac
-    done
-    case "$netbios_ans" in
-        [Yy]*)
-            cp -f /etc/samba/smb.conf{,.bak} &>/dev/null
-            sed -i 's/^\s*disable netbios\s*=.*/   disable netbios = no/' /etc/samba/smb.conf
-            sed -i "s/^;\s*netbios name\s*=.*/   netbios name = $local_user/" /etc/samba/smb.conf
-            cat >> /etc/logrotate.d/samba <<'NMBD'
-/var/log/samba/log.nmbd {
-    weekly
-    missingok
-    rotate 7
-    postrotate
-        systemctl reload nmbd 2>/dev/null || true
-    endscript
-    compress
-    notifempty
-}
-NMBD
-            cp -f "$SMBSTACK_TOOLS/smbload.sh" "$SMBSTACK_TOOLS/smbload.sh.tmp"
-            cat >> "$SMBSTACK_TOOLS/smbload.sh.tmp" <<'NMBD'
-
-# Samba Service (nmbd)
-if pgrep -x nmbd > /dev/null; then
-    echo "nmbd: ONLINE"
-else
-    systemctl stop nmbd.service &>/dev/null
-    if systemctl start nmbd.service; then
-        echo "nmbd start: $(date)" | tee -a /var/log/syslog
-    else
-        echo "nmbd start FAILED: $(date)" | tee -a /var/log/syslog
-    fi
-fi
-NMBD
-            mv -f "$SMBSTACK_TOOLS/smbload.sh.tmp" "$SMBSTACK_TOOLS/smbload.sh"
-            chmod +x "$SMBSTACK_TOOLS/smbload.sh"
-            systemctl enable --now nmbd.service
-            echo "NetBIOS enabled"
-            echo ""
-            echo "NOTE: NetBIOS requires the following iptables rules on interface $SMB_IFACE:"
-            echo "  iptables -A INPUT   -i $SMB_IFACE -p udp -m multiport --dports 137,138 -j ACCEPT"
-            echo "  iptables -A FORWARD -i $SMB_IFACE -p udp -m multiport --dports 137,138 -j ACCEPT"
-            echo "  iptables -A INPUT   -i $SMB_IFACE -p tcp --dport 139 -j ACCEPT"
-            echo "  iptables -A FORWARD -i $SMB_IFACE -p tcp --dport 139 -j ACCEPT"
-            echo ""
-            ;;
-        *)
-            echo "NetBIOS disabled"
-            ;;
-    esac
 
     systemctl daemon-reload
     systemctl restart smbd winbind rsyslog apache2
@@ -594,10 +555,12 @@ SMB_NET="$SMB_NET"
 SMB_IFACE="$SMB_IFACE"
 SERVER_IP="$SERVER_IP"
 SMBNAME="$SMBNAME"
-NETBIOS="${netbios_ans:-N}"
 
 # MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
 # file per request, by both smbapi.php and smbaudit-diagnostic.php.
+# NOTE: smbaudit.html's own fetch request uses a fixed limit of 50000 in
+# its JS code, independent of this value — raising MAX_LOG_LINES here does
+# not change what the audit viewer UI requests.
 MAX_LOG_LINES="50000"
 
 # TRUSTED_PROXIES: IPv4 address(es), comma-separated, whose REMOTE_ADDR
@@ -634,7 +597,7 @@ do_update() {
     fi
 
     # load saved config
-    local allowed_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME NETBIOS TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
+    local allowed_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
     while IFS= read -r line; do
         [[ "$line" =~ ^[A-Z_]+=.* ]] && {
             key="${line%%=*}"
@@ -648,6 +611,13 @@ do_update() {
     done < "$SMBSTACK_ENV"
     echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
     echo ""
+
+    # index.php: static, no placeholders, always (re)deployed — heals installs
+    # from before this file was added to do_install's copy list
+    if [ -f "$WEB_DIR/index.php" ]; then
+        cp -f "$WEB_DIR/index.php" "$SMBSTACK_WEB/index.php"
+        echo "  Updated: index.php"
+    fi
 
     # web files (application code only - no user-customized config files)
     for src in "$WEB_DIR"/*; do
@@ -680,25 +650,6 @@ do_update() {
         chmod +x "$SMBSTACK_TOOLS/$fname"
         echo "  Updated: $fname"
     done
-
-    # restore nmbd watchdog block if NetBIOS was enabled during install
-    if [[ "$NETBIOS" =~ ^[Yy]$ ]]; then
-        cat >> "$SMBSTACK_TOOLS/smbload.sh" <<'NMBD'
-
-# Samba Service (nmbd)
-if pgrep -x nmbd > /dev/null; then
-    echo "nmbd: ONLINE"
-else
-    systemctl stop nmbd.service &>/dev/null
-    if systemctl start nmbd.service; then
-        echo "nmbd start: $(date)" | tee -a /var/log/syslog
-    else
-        echo "nmbd start FAILED: $(date)" | tee -a /var/log/syslog
-    fi
-fi
-NMBD
-        echo "  Restored: nmbd watchdog block in smbload.sh"
-    fi
 
     systemctl daemon-reload
     systemctl restart smbd winbind rsyslog apache2
@@ -733,6 +684,9 @@ do_uninstall() {
     # removes exactly the one line the installer added, without touching
     # anything else the admin may have added to ports.conf since install.
     rm -f /etc/apache2/ports.conf.bak
+
+    # stop smbwatch before removing its files
+    [ -x "$SMBSTACK_TOOLS/smbwatch.sh" ] && "$SMBSTACK_TOOLS/smbwatch.sh" stop 2>/dev/null || true
 
     # project web directory
     rm -rf "$SMBSTACK_WWW"
@@ -794,7 +748,7 @@ do_status() {
     echo ""
     echo "=== Apache Ports ==="
     for port in 3092; do
-        if ss -tlnp | grep -q ":$port"; then
+        if ss -tlnp | grep -qE ":${port}[[:space:]]"; then
             echo "  :$port OPEN"
         else
             echo "  :$port CLOSED"

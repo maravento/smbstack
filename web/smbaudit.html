@@ -553,12 +553,12 @@
         function startAutoRefresh() {
             stopAutoRefresh();
             if (refreshTime > 0) {
-                // Iniciar el auto-refresh
+                // Start auto-refresh
                 refreshInterval = setInterval(loadLogs, refreshTime);
                 autoRefreshActive = true;
                 updateRefreshButton(true);
-                
-                // Iniciar el contador regresivo
+
+                // Start the countdown timer
                 countdownSeconds = Math.floor(refreshTime / 1000);
                 updateCountdownDisplay();
                 document.getElementById('countdownTimer').style.display = 'inline-block';
@@ -604,8 +604,8 @@
             } else if (refreshTime === 0) {
                 stopAutoRefresh();
             } else if (refreshTime > 0) {
-                // Si el auto-refresh no está activo pero se selecciona un tiempo válido
-                // actualizar el contador para cuando se active
+                // Auto-refresh is not active but a valid time was selected —
+                // update the countdown for when it does activate
                 countdownSeconds = Math.floor(refreshTime / 1000);
             }
         }
