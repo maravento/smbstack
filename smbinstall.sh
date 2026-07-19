@@ -348,7 +348,7 @@ do_install() {
         "$SMBSTACK_WEB/smbaudit-diagnostic.php" \
         "$SMBSTACK_WEB/shared.php"; do
         [ -f "$f" ] || continue
-        escaped_user=$(printf '%s' "$local_user" | sed 's/[&/\\|]/\\&/g')
+        escaped_user=$(printf '%s' "$local_user" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$f"
         sed -i "s|compartida|$SHARED_NAME|g" "$f"
     done
@@ -425,7 +425,7 @@ EOF
 
     apply_smb_conf_placeholders() {
         local escaped_user
-        escaped_user=$(printf '%s' "$local_user" | sed 's/[&/\\|]/\\&/g')
+        escaped_user=$(printf '%s' "$local_user" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" /etc/samba/smb.conf
         sed -i "s|compartida|$SHARED_NAME|g" /etc/samba/smb.conf
     }
@@ -635,7 +635,7 @@ do_update() {
         mkdir -p "$SMBSTACK_WWW/backups"
         cp -f "$dst" "$SMBSTACK_WWW/backups/$fname.bak" &>/dev/null
         cp -f "$src" "$dst"
-        escaped_user=$(printf '%s' "$LOCAL_USER" | sed 's/[&/\\|]/\\&/g')
+        escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$dst"
         sed -i "s|compartida|$SHARED_NAME|g" "$dst"
         echo "  Updated: $fname"

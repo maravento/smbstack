@@ -51,8 +51,8 @@ fi
 
 ### PATHS
 SMBSTACK_ENV="/var/www/smbstack/smbstack.env"
-PIDFILE="/tmp/smbstack-smbwatch.pid"
-STATEFILE="/tmp/smbstack-smbwatch.state"
+PIDFILE="/var/run/smbstack-smbwatch.pid"
+STATEFILE="/var/run/smbstack-smbwatch.state"
 
 ### CHECK DEPENDENCIES
 for pkg in inotify-tools; do
