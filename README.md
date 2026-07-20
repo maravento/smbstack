@@ -11,10 +11,45 @@
 <table>
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <b>SMBstack</b> is an open-source Samba stack installer for Debian/Ubuntu. It deploys a shared folder with Recycle Bin, full audit logging via rsyslog, a web-based audit viewer, and a shared folder browser — all configured interactively through a single installer script.
+      <b>SMBstack</b> is an open-source Samba stack installer for Debian-based systems. It deploys a shared folder with Recycle Bin, full audit logging via rsyslog, a web-based audit viewer, and a shared folder browser — all configured interactively through a single installer script.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <b>SMBstack</b> es un instalador de stack Samba de código abierto para Debian/Ubuntu. Despliega una carpeta compartida con Papelera de Reciclaje, auditoría completa vía rsyslog, un visor web de auditoría y un explorador web de la carpeta compartida — todo configurado de forma interactiva a través de un único script instalador.
+      <b>SMBstack</b> es un instalador de stack Samba de código abierto para sistemas basados en Debian. Despliega una carpeta compartida con Papelera de Reciclaje, auditoría completa vía rsyslog, un visor web de auditoría y un explorador web de la carpeta compartida — todo configurado de forma interactiva a través de un único script instalador.
+    </td>
+  </tr>
+</table>
+
+## Requirements
+
+---
+
+**⚠️ WARNING:** Only tested on Ubuntu 24.04 LTS. Other versions or distros not tested, use at your own risk.
+
+- Apache2 and PHP
+- rsyslog
+- logrotate
+- inotify-tools (required by `smbwatch.sh`)
+
+```bash
+apt-get install -y apache2 apache2-utils libapache2-mod-php
+apt-get install -y --reinstall apache2-doc
+```
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <strong>Important</strong>
+      <ul>
+        <li>nginx must not be running.</li>
+        <li>SMBstack uses Apache2 exclusively on port 3092, because it is listed as <strong>Unassigned</strong> by IANA. For more information visit <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt</a></li>
+      </ul>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <strong>Importante</strong>
+      <ul>
+        <li>nginx no debe estar en ejecución.</li>
+        <li>SMBstack usa Apache2 exclusivamente en el puerto 3092, ya que está listado como <strong>Sin asignar</strong> por IANA. Para más información visita <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt</a></li>
+      </ul>
     </td>
   </tr>
 </table>
@@ -25,7 +60,7 @@
 
 ### Main Menu
 
-[![smbmain](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbmain.png)](https://github.com/maravento/smbstack)
+[![smbstack-main](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-main.png)](https://github.com/maravento/smbstack)
 
 <table>
   <tr>
@@ -51,7 +86,18 @@
   </tr>
 </table>
 
-[![smbaudit](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbaudit.png)](https://github.com/maravento/smbstack)
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      Records are paginated (50/100/200/500 per page) with page navigation, so large audit logs stay responsive.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Los registros están paginados (50/100/200/500 por página) con navegación entre páginas, para que los logs de auditoría extensos se mantengan ágiles.
+    </td>
+  </tr>
+</table>
+
+[![smbstack-botton](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-botton.png)](https://github.com/maravento/smbstack)
 
 ### SMBshared
 
@@ -66,7 +112,18 @@
   </tr>
 </table>
 
-[![smbshared](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbshared.png)](https://github.com/maravento/smbstack)
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      Both views support a light/dark theme toggle from the top bar, synced across tabs.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Ambas vistas admiten un interruptor de tema claro/oscuro desde la barra superior, sincronizado entre pestañas.
+    </td>
+  </tr>
+</table>
+
+[![smbstack-views](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-views.png)](https://github.com/maravento/smbstack)
 
 <table>
   <tr>
@@ -79,7 +136,7 @@
   </tr>
 </table>
 
-[![smbfiles](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbfiles.png)](https://github.com/maravento/smbstack)
+[![smbstack-files](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-files.png)](https://github.com/maravento/smbstack)
 
 ## Scope
 
@@ -152,10 +209,10 @@ smbstack/
 │   ├── smb.conf                # Samba main config (placeholders: your_user, compartida)
 │   └── fullaudit.conf          # rsyslog full audit rule
 ├── img/
-│   ├── smbmain.png
-│   ├── smbshared.png
-│   ├── smbfiles.png
-│   └── smbaudit.png
+│   ├── smbstack-main.png
+│   ├── smbstack-files.png
+│   ├── smbstack-botton.png
+│   └── smbstack-views.png
 ├── web/                        # Web files deployed to /var/www/smbstack/web/
 │   ├── smbweb.conf             # Apache vhost (:3092/?tab=audit and :3092/?tab=shared)
 │   ├── index.php               # Main page (Audit / Shared tabs)
@@ -194,40 +251,6 @@ smbstack/
 /var/log/samba/log.samba        # Created by installer, written directly by smbd
 ```
 
-## Requirements
-
----
-
-- Ubuntu 24.04 x64
-- Apache2 and PHP
-- rsyslog
-- logrotate
-- inotify-tools (required by `smbwatch.sh`)
-
-```bash
-apt-get install -y apache2 apache2-utils libapache2-mod-php
-apt-get install -y --reinstall apache2-doc
-```
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <strong>Important</strong>
-      <ul>
-        <li>nginx must not be running.</li>
-        <li>SMBstack uses Apache2 exclusively on port 3092, because it is listed as <strong>Unassigned</strong> by IANA. For more information visit <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt</a></li>
-      </ul>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <strong>Importante</strong>
-      <ul>
-        <li>nginx no debe estar en ejecución.</li>
-        <li>SMBstack usa Apache2 exclusivamente en el puerto 3092, ya que está listado como <strong>Sin asignar</strong> por IANA. Para más información visita <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt</a></li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
 ## HOW TO USE
 
 ---
@@ -264,10 +287,10 @@ The installer will prompt for:
 <table>
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>$local_user</code> is the local Linux user detected automatically by the installer: the user logged into the console session, or <code>SUDO_USER</code>, or the first user found under <code>/home/</code>. It becomes the owner of the shared folder and the base name for the Samba account.
+      <code>$local_user</code> is the local Linux user detected automatically by the installer: among users within the system's normal UID range (<code>UID_MIN</code>-<code>UID_MAX</code> from <code>/etc/login.defs</code>, excluding <code>/false</code>/<code>/nologin</code> shells) who belong to the <code>sudo</code> group, the one with the lowest UID is selected. It becomes the owner of the shared folder and the base name for the Samba account.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>$local_user</code> es el usuario local de Linux detectado automáticamente por el instalador: el usuario con sesión en consola, o <code>SUDO_USER</code>, o el primer usuario encontrado en <code>/home/</code>. Se convierte en el propietario de la carpeta compartida y el nombre base de la cuenta Samba.
+      <code>$local_user</code> es el usuario local de Linux detectado automáticamente por el instalador: entre los usuarios dentro del rango normal de UID (<code>UID_MIN</code>-<code>UID_MAX</code> de <code>/etc/login.defs</code>, excluyendo shells <code>/false</code>/<code>/nologin</code>) que pertenezcan al grupo <code>sudo</code>, se selecciona el de menor UID. Se convierte en el propietario de la carpeta compartida y el nombre base de la cuenta Samba.
     </td>
   </tr>
 </table>
@@ -510,7 +533,7 @@ recycle:noversions = *.dat,*.ini
 | `recycle:versions` | `yes` | Keep multiple versions of deleted files / Mantener múltiples versiones |
 | `recycle:noversions` | `*.dat,*.ini` | Exclude patterns from versioning / Excluir patrones del versionado |
 | `recycle:touch` | `yes` | Update access time when recycled / Actualizar tiempo de acceso al reciclar |
-| `recycle:exclude` | `Temporary, lock, log, and object file` | Permanently delete matching files / Eliminar permanentemente archivos que coincidan |
+| `recycle:exclude` | `*.tmp,*.temp,*.o,~$*,*.~??,*.log,*.trace,*.TMP,*.asv` | Permanently delete matching files / Eliminar permanentemente archivos que coincidan |
 | `recycle:exclude_dir` | `/temp,/tmp,/cache,/.Trash-1000` | Bypass recycle bin for directories / Omitir papelera para directorios |
 | `recycle:maxsize` | `1073741824` | Max file size (1 GB) / Tamaño máximo (1 GB) |
 | `hide files` | `/.recycle/` | Hide recycle directory from clients / Ocultar papelera a los clientes |
@@ -668,17 +691,6 @@ sudo /var/www/smbstack/tools/smbwatch.sh stop
 sudo /var/www/smbstack/tools/smbwatch.sh status
 ```
 
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <code>inotify-tools</code> is required: <code>apt-get install -y inotify-tools</code>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      Se requiere <code>inotify-tools</code>: <code>apt-get install -y inotify-tools</code>
-    </td>
-  </tr>
-</table>
-
 ### NetBIOS
 
 <table>
@@ -744,7 +756,7 @@ EOF
 > **Protección CSRF:** `web/shared.php` no tiene login por diseño — el acceso de invitado para toda la LAN (y el túnel, si está activo) es intencional. Lo que sí tiene es un token por sesión en los cuatro formularios que modifican estado (subir, nueva carpeta, nuevo archivo, papelera), de modo que un POST solo se acepta si realmente se cargó la página antes. Esto bloquea que un sitio malicioso ajeno autoenvíe un formulario a tu servidor a través del navegador de un visitante (CSRF); **no** restringe quién puede usar el explorador en sí — eso sigue gobernado únicamente por el alcance de red (LAN / túnel), igual que hoy.
 
 **Optional tunnel:**
-- [Cloudflare Tunnel (start|stop|status) - Zero Trust Activation Recommended](https://raw.githubusercontent.com/maravento/vault/master/scripts/bash/cftunnel.sh)
+- [Cloudflare Tunnel with Zero Trust Recommended](https://raw.githubusercontent.com/maravento/vault/master/scripts/bash/cftunnel.sh)
 
 ## NOTICE
 

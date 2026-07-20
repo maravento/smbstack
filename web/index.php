@@ -31,7 +31,31 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
             background: #1a2332;
             overflow: hidden;
+            transition: background .2s;
         }
+
+        body.dark { background: #0b0f16; }
+        body.dark .header { background: #141721; }
+        body.dark .header-top { border-bottom-color: rgba(255,255,255,0.05); }
+        body.dark .header-date { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+        body.dark .tabs { background: #0f1117; }
+        body.dark .tab { color: #607d8b; }
+        body.dark .tab:hover { color: #cbd5e0; background: rgba(255,255,255,0.03); }
+        body.dark .tab.active { background: rgba(246,173,85,0.06); }
+        body.dark .btn-theme { background: #232838; color: #e2e8f0; }
+        body.dark .btn-theme:hover { background: #2d3748; }
+
+        .btn-theme {
+            background: rgba(255,255,255,0.08);
+            color: #e6eef8;
+            border: none;
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        .btn-theme:hover { background: rgba(255,255,255,0.15); }
 
         /* ── HEADER ── */
         .header {
@@ -54,6 +78,12 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
 
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
         .header-brand {
             display: flex;
             align-items: center;
@@ -62,6 +92,12 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             font-size: 1rem;
             font-weight: 700;
             letter-spacing: 0.02em;
+            text-decoration: none;
+        }
+
+        .header-brand:hover {
+            color: white;
+            text-decoration: underline;
         }
 
         .header-brand span {
@@ -69,14 +105,15 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
         }
 
         .header-title {
-            color: #a0aec0;
-            font-size: 0.85rem;
-            font-weight: 400;
+            color: #e2e8f0;
+            font-size: 0.95rem;
+            font-weight: 600;
         }
 
         .header-date {
-            color: #a0aec0;
-            font-size: 0.8rem;
+            color: #e2e8f0;
+            font-size: 0.85rem;
+            font-weight: 600;
             background: rgba(255,255,255,0.07);
             padding: 0.3rem 0.7rem;
             border-radius: 6px;
@@ -143,11 +180,14 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 
 <div class="header">
     <div class="header-top">
-        <div class="header-brand">
+        <a class="header-brand" href="https://github.com/maravento/smbstack" target="_blank" rel="noopener noreferrer">
             <span>🗂️</span> SMBstack
-        </div>
+        </a>
         <div class="header-title">Shared Folder &amp; Audit</div>
-        <div class="header-date" id="clock"></div>
+        <div class="header-right">
+            <button class="btn-theme" id="btnTheme" onclick="toggleTheme()" title="Toggle dark/light mode">🌙</button>
+            <div class="header-date" id="clock"></div>
+        </div>
     </div>
     <div class="tabs">
         <a class="tab <?= $tab === 'shared' ? 'active' : '' ?>" href="?tab=shared">
@@ -175,6 +215,32 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
     }
     updateClock();
     setInterval(updateClock, 1000);
+
+    function broadcastTheme(dark) {
+        ['frame-shared', 'frame-audit'].forEach(function(id) {
+            var f = document.getElementById(id);
+            if (f && f.contentWindow) {
+                f.contentWindow.postMessage({ smbstackTheme: dark ? 'dark' : 'light' }, window.location.origin);
+            }
+        });
+    }
+
+    function toggleTheme() {
+        var dark = document.body.classList.toggle('dark');
+        document.getElementById('btnTheme').textContent = dark ? '☀️' : '🌙';
+        try { localStorage.setItem('smbstack_theme', dark ? 'dark' : 'light'); } catch (e) {}
+        broadcastTheme(dark);
+    }
+
+    function initTheme() {
+        var saved = '';
+        try { saved = localStorage.getItem('smbstack_theme') || ''; } catch (e) {}
+        if (saved === 'dark') {
+            document.body.classList.add('dark');
+            document.getElementById('btnTheme').textContent = '☀️';
+        }
+    }
+    initTheme();
 </script>
 
 </body>

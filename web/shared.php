@@ -208,6 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mkdir'])) {
         exit;
     }
     if (mkdir($target, 0775)) {
+        chmod($target, 02775);
         chown($target, 'www-data');
         @chgrp($target, 'sambashare');
         write_audit('mkdirat', $target);
@@ -256,7 +257,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['newfile'])) {
     header('Location: ?path=' . urlencode($request) . '&msg=newfile_' . $newfile_msg);
     exit;
 }
-
 
 // Recycle handler
 //
@@ -384,6 +384,7 @@ foreach ($rit as $item) {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
+            transition: background .2s, color .2s;
         }
 
         .header {
@@ -399,6 +400,35 @@ foreach ($rit as $item) {
 
         .header h1 { color: white; font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin: 0 auto; }
         .header-meta { display: none; }
+
+        /* ── Dark mode ────────────────────────────────────────────────── */
+        body.dark { background: #0f1117; color: #e2e8f0; }
+        body.dark .stats-bar,
+        body.dark .breadcrumb,
+        body.dark .table-container,
+        body.dark .upload-area { background: #141721; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+        body.dark .stats-info { color: #90a4ae; }
+        body.dark .breadcrumb { color: #78909c; }
+        body.dark .breadcrumb a { color: #63b3ed; }
+        body.dark .breadcrumb .sep { color: #37474f; }
+        body.dark .breadcrumb .current { color: #e2e8f0; }
+        body.dark .mkdir-area { background: #1a1d2e; border-bottom-color: #232838; }
+        body.dark th { background: #1a1d2e; color: #90a4ae; border-bottom-color: #232838; }
+        body.dark td { border-bottom-color: #1a1f2e; color: #cbd5e0; }
+        body.dark tr:hover td { background: #1a1d2e; }
+        body.dark .name-cell a { color: #e2e8f0; }
+        body.dark .name-cell a:hover { color: #63b3ed; }
+        body.dark .dir-link { color: #cbd5e0 !important; }
+        body.dark .dir-link:hover { color: #fff !important; }
+        body.dark .muted { color: #9aabb8; }
+        body.dark .no-data { color: #607d8b; }
+        body.dark input[type=text], body.dark textarea { background: #0f1117; border-color: #2d3748; color: #e2e8f0; }
+        body.dark .alert-success { background: #1a3a1a; color: #9ae6b4; border-color: #276749; }
+        body.dark .alert-error   { background: #2d1515; color: #fc8181; border-color: #742a2a; }
+        body.dark .alert-warning { background: #2d2500; color: #f6e05e; border-color: #744210; }
+        body.dark footer { color: #546e7a; }
+        body.dark footer a { color: #546e7a; }
+        body.dark footer a:hover { color: #63b3ed; }
 
         .stats-bar {
             background: white;
@@ -529,7 +559,7 @@ foreach ($rit as $item) {
         .dir-link { color: #374151 !important; font-weight: 500; }
         .dir-link:hover { color: #111827 !important; }
 
-        .muted { color: #64748b; }
+        .muted { color: #47556a; }
 
         .action-cell { display: flex; gap: 0.4rem; }
 
@@ -730,6 +760,20 @@ foreach ($rit as $item) {
     <a href="https://github.com/maravento/smbstack" target="_blank">SMBstack</a>
     &mdash; maravento.com
 </footer>
+
+<script>
+function initTheme() {
+    var saved = '';
+    try { saved = localStorage.getItem('smbstack_theme') || ''; } catch (e) {}
+    if (saved === 'dark') document.body.classList.add('dark');
+}
+initTheme();
+
+window.addEventListener('message', function(e) {
+    if (e.origin !== window.location.origin || !e.data || !e.data.smbstackTheme) return;
+    document.body.classList.toggle('dark', e.data.smbstackTheme === 'dark');
+});
+</script>
 
 </body>
 </html>

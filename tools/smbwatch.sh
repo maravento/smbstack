@@ -27,6 +27,11 @@
 #
 ################################################################################
 
+set -uo pipefail
+
+# PATH for cron
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # logging
 log_file="/var/log/smbwatch.log"
 log() {
@@ -37,15 +42,6 @@ log() {
 ## root check
 if [ "$(id -u)" != "0" ]; then
     log "ERROR: This script must be run as root"
-    exit 1
-fi
-
-# prevent overlapping runs
-SCRIPT_LOCK="/var/lock/$(basename "$0" .sh).lock"
-(umask 077; : >> "$SCRIPT_LOCK")
-exec 200>"$SCRIPT_LOCK"
-if ! flock -n 200; then
-    log "Script $(basename "$0") is already running"
     exit 1
 fi
 
@@ -129,6 +125,15 @@ handle_new_file() {
 
 ### START
 start() {
+    # prevent overlapping runs
+    SCRIPT_LOCK="/var/lock/$(basename "$0" .sh).lock"
+    (umask 077; : >> "$SCRIPT_LOCK")
+    exec 200>"$SCRIPT_LOCK"
+    if ! flock -n 200; then
+        log "Script $(basename "$0") is already running"
+        exit 1
+    fi
+
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
         log "SMBwatch is already running with PID $(cat "$PIDFILE")"
         exit 1
@@ -210,7 +215,6 @@ start() {
     log "  Recycle bin : $RECYCLE_DIR"
     log "  Log         : $log_file"
 
-    exec 200>&-
     inotifywait -m -r -e create --format '%w%f' "${WATCH_DIRS[@]}" 2>>"$log_file" | while read -r NEWFILE; do
         handle_new_file "$NEWFILE"
     done &
@@ -267,15 +271,8 @@ status() {
 }
 
 ### MAIN
-case "$1" in
-    start)
-        exec 200>"$SCRIPT_LOCK"
-        if ! flock -n 200; then
-            log "Script $(basename "$0") is already running"
-            exit 1
-        fi
-        start
-        ;;
+case "${1:-}" in
+    start)  start ;;
     stop)   stop ;;
     status) status ;;
     *)      log "Usage: $(basename "$0") {start|stop|status}" ;;

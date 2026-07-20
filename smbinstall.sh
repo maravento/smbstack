@@ -8,19 +8,60 @@
 #
 ################################################################################
 
-# checking root
+set -uo pipefail
+
+## root check
 if [ "$(id -u)" != "0" ]; then
     echo "ERROR: This script must be run as root"
     exit 1
 fi
 
-# checking script execution
+# prevent overlapping runs
 SCRIPT_LOCK="/var/lock/$(basename "$0" .sh).lock"
+(umask 077; : >> "$SCRIPT_LOCK")
 exec 200>"$SCRIPT_LOCK"
 if ! flock -n 200; then
     echo "Script $(basename "$0") is already running"
     exit 1
 fi
+
+# LOCAL USER detection
+detect_local_user() {
+    local uid_min uid_max
+    local user uid best_user="" best_uid=999999
+
+    uid_min=$(awk '/^UID_MIN/{print $2}' /etc/login.defs 2>/dev/null)
+    uid_max=$(awk '/^UID_MAX/{print $2}' /etc/login.defs 2>/dev/null)
+    uid_min=${uid_min:-1000}
+    uid_max=${uid_max:-60000}
+
+    while IFS=: read -r user _ uid _ _ _ shell; do
+        [ "$user" = "root" ] && continue
+        [ -z "$uid" ] && continue
+        [ "$uid" -lt "$uid_min" ] && continue
+        [ "$uid" -gt "$uid_max" ] && continue
+
+        case "$shell" in
+            */false|*/nologin) continue ;;
+        esac
+
+        id -nG "$user" 2>/dev/null | grep -qw sudo || continue
+
+        if [ "$uid" -lt "$best_uid" ]; then
+            best_uid="$uid"
+            best_user="$user"
+        fi
+    done </etc/passwd
+
+    [ -n "$best_user" ] || return 1
+    echo "$best_user"
+}
+
+if ! local_user=$(detect_local_user); then
+    echo "ERROR: No valid local user found. Create one with sudo access."
+    exit 1
+fi
+echo "Using local user: $local_user"
 
 retry_cmd() {
     local max_attempts=10
@@ -59,27 +100,12 @@ check_repo() {
         echo ""
         echo "ERROR: Repository files not found. Run:"
         echo ""
-        echo "  git clone https://github.com/maravento/smbstack"
+        echo "git clone https://github.com/maravento/smbstack"
         echo ""
         exit 1
     fi
 }
 check_repo
-
-### LOCAL USER (multi-strategy detection with validation)
-detect_user() {
-    local_user=""
-    local_user=$(who | awk '/\(:0\)/{print $1; exit}')
-    [ -z "$local_user" ] && local_user=$(logname 2>/dev/null || true)
-    [ -z "$local_user" ] && local_user="${SUDO_USER:-}"
-    [ -z "$local_user" ] && local_user=$(who | awk 'NR==1{print $1}')
-    [ -z "$local_user" ] && local_user=$(ls -l /home 2>/dev/null | awk '/^d/{print $3; exit}')
-    if [ -z "$local_user" ] || ! id "$local_user" &>/dev/null; then
-        echo "ERROR: Cannot determine a valid local user"
-        exit 1
-    fi
-    echo "Using local user: $local_user"
-}
 
 ### SHARED FOLDER SETUP
 select_shared_folder() {
@@ -107,13 +133,13 @@ select_shared_folder() {
         actual_mode=$(stat -c "%a" "$SHARED_PATH")
 
         if [ "$actual_owner" != "$local_user" ] || [ "$actual_group" != "sambashare" ]; then
-            echo "  Owner/group mismatch (got $actual_owner:$actual_group, expected $local_user:sambashare). Fixing..."
+            echo "Owner/group mismatch (got $actual_owner:$actual_group, expected $local_user:sambashare). Fixing..."
             chown "$local_user":sambashare "$SHARED_PATH"
             perms_ok=0
         fi
 
         if [ "$actual_mode" != "755" ]; then
-            echo "  Mode mismatch (got $actual_mode, expected 755). Fixing..."
+            echo "Mode mismatch (got $actual_mode, expected 755). Fixing..."
             chmod 755 "$SHARED_PATH"
             perms_ok=0
         fi
@@ -123,12 +149,12 @@ select_shared_folder() {
             dir_group=$(stat -c "%G" "$dir")
             dir_mode=$(stat -c "%a" "$dir")
             if [ "$dir_owner" != "$local_user" ] || [ "$dir_group" != "sambashare" ]; then
-                echo "  Fixing owner/group on: $dir"
+                echo "Fixing owner/group on: $dir"
                 chown "$local_user":sambashare "$dir"
                 perms_ok=0
             fi
             if [ "$dir_mode" != "2775" ]; then
-                echo "  Fixing mode on: $dir"
+                echo "Fixing mode on: $dir"
                 chmod 2775 "$dir"
                 perms_ok=0
             fi
@@ -139,19 +165,19 @@ select_shared_folder() {
             file_group=$(stat -c "%G" "$file")
             file_mode=$(stat -c "%a" "$file")
             if [ "$file_owner" != "$local_user" ] || [ "$file_group" != "sambashare" ]; then
-                echo "  Fixing owner/group on: $file"
+                echo "Fixing owner/group on: $file"
                 chown "$local_user":sambashare "$file"
                 perms_ok=0
             fi
             if [ "$file_mode" != "664" ]; then
-                echo "  Fixing mode on: $file"
+                echo "Fixing mode on: $file"
                 chmod 664 "$file"
                 perms_ok=0
             fi
         done < <(find "$SHARED_PATH" -mindepth 1 -path "$SHARED_PATH/.recycle" -prune -o -type f -print)
 
         if ! getfacl "$SHARED_PATH" 2>/dev/null | grep -q "user:www-data:r-x"; then
-            echo "  Missing ACL for www-data. Fixing..."
+            echo "Missing ACL for www-data. Fixing..."
             setfacl -m u:www-data:r-x "$SHARED_PATH"
             perms_ok=0
         fi
@@ -168,9 +194,9 @@ select_shared_folder() {
         setfacl -d -m g:sambashare:rwx "$SHARED_PATH/.recycle"
 
         if [ "$perms_ok" -eq 1 ]; then
-            echo "  Permissions OK"
+            echo "Permissions OK"
         else
-            echo "  Permissions corrected"
+            echo "Permissions corrected"
         fi
     else
         sudo -u "$local_user" mkdir -p "$SHARED_PATH"
@@ -205,12 +231,12 @@ check_already_installed() {
 
     if pdbedit -L 2>/dev/null | grep -q ":"; then
         installed=1
-        reasons+="  - Samba users already registered (pdbedit)\n"
+        reasons+=" - Samba users already registered (pdbedit)\n"
     fi
 
     if [ -f "$SMBSTACK_ENV" ]; then
         installed=1
-        reasons+="  - smbstack.env already exists: $SMBSTACK_ENV\n"
+        reasons+=" - smbstack.env already exists: $SMBSTACK_ENV\n"
     fi
 
     if [ -f "/etc/samba/smb.conf" ]; then
@@ -218,7 +244,7 @@ check_already_installed() {
         [ -f "$SMBSTACK_ENV" ] && _existing_share=$(grep "^SHARED_NAME=" "$SMBSTACK_ENV" | cut -d= -f2 | tr -d '"')
         if [ -n "$_existing_share" ] && grep -q "\[${_existing_share}\]" /etc/samba/smb.conf 2>/dev/null; then
             installed=1
-            reasons+="  - smb.conf already configured: /etc/samba/smb.conf\n"
+            reasons+=" - smb.conf already configured: /etc/samba/smb.conf\n"
         fi
     fi
 
@@ -236,7 +262,6 @@ check_already_installed() {
 
 do_install() {
     check_already_installed
-    detect_user
 
     # dependency check
     if systemctl is-active --quiet nginx; then
@@ -247,8 +272,8 @@ do_install() {
     for cmd in apache2 a2ensite a2dissite a2enmod htpasswd php; do
         if ! command -v "$cmd" &>/dev/null; then
             echo "ERROR: $cmd not found. Run first:"
-            echo "  apt-get install -y apache2 apache2-utils libapache2-mod-php"
-            echo "  apt-get install -y --reinstall apache2-doc"
+            echo "apt-get install -y apache2 apache2-utils libapache2-mod-php"
+            echo "apt-get install -y --reinstall apache2-doc"
             exit 1
         fi
     done
@@ -395,10 +420,9 @@ EOF
     # smb.conf
     prompt_smb_net_iface() {
         while true; do
-            read -p "Enter Samba server IP/network (e.g. 192.168.1.0/24): " SMB_NET
-            if [ -z "$SMB_NET" ]; then
-                echo "ERROR: Network cannot be empty"
-            elif ! [[ "$SMB_NET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+            read -p "Enter Samba server IP/network [192.168.1.0/24]: " SMB_NET
+            SMB_NET="${SMB_NET:-192.168.1.0/24}"
+            if ! [[ "$SMB_NET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
                 echo "ERROR: Invalid format. Expected x.x.x.x/xx (e.g. 192.168.1.0/24)"
                 SMB_NET=""
             else
@@ -408,7 +432,7 @@ EOF
         local default_iface
         default_iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1)
         echo "Available interfaces:"
-        ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | sed 's/^/  /'
+        ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | sed 's/^/ /'
         while true; do
             read -p "Enter network interface [$default_iface]: " SMB_IFACE
             SMB_IFACE="${SMB_IFACE:-$default_iface}"
@@ -454,8 +478,8 @@ EOF
                 [Nn])
                     echo "Skipping smb.conf"
                     echo "WARNING: existing smb.conf kept as-is. The [compartida] share and the"
-                    echo "         full_audit/recycle VFS were NOT applied. Add them manually or"
-                    echo "         re-run and choose 'y' to deploy the bundled smb.conf."
+                    echo "full_audit/recycle VFS were NOT applied. Add them manually or"
+                    echo "re-run and choose 'y' to deploy the bundled smb.conf."
                     prompt_smb_net_iface
                     break
                     ;;
@@ -481,7 +505,7 @@ EOF
 
     cp -f /etc/logrotate.d/rsyslog{,.bak} &>/dev/null
     grep -qF 'create 0644 syslog adm' /etc/logrotate.d/rsyslog || \
-        sed -i '/sharedscripts/a \    create 0644 syslog adm' /etc/logrotate.d/rsyslog
+        sed -i '/sharedscripts/a \ create 0644 syslog adm' /etc/logrotate.d/rsyslog
     grep -qF 'su syslog adm' /etc/logrotate.d/rsyslog || \
         sed -i '/^{$/a \	su syslog adm' /etc/logrotate.d/rsyslog
 
@@ -518,7 +542,7 @@ EOF
     else
         # Narrow the web panel's Listen directive from all-interfaces down to
         # just the chosen LAN IP, plus loopback (needed for a local tunnel
-        # daemon like cloudflared, which connects to Apache via 127.0.0.1 —
+        # daemon like cloudflared, which connects to Apache via 127.0.0.1 --
         # see TRUSTED_PROXIES). This was written as 0.0.0.0:3092 earlier
         # because SERVER_IP wasn't known yet at that point in the install.
         sed -i "s|^Listen 0.0.0.0:3092\$|Listen $SERVER_IP:3092\nListen 127.0.0.1:3092|" /etc/apache2/ports.conf
@@ -559,7 +583,7 @@ SMBNAME="$SMBNAME"
 # MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
 # file per request, by both smbapi.php and smbaudit-diagnostic.php.
 # NOTE: smbaudit.html's own fetch request uses a fixed limit of 50000 in
-# its JS code, independent of this value — raising MAX_LOG_LINES here does
+# its JS code, independent of this value -- raising MAX_LOG_LINES here does
 # not change what the audit viewer UI requests.
 MAX_LOG_LINES="50000"
 
@@ -574,17 +598,17 @@ ENV
     chmod 640 "$SMBSTACK_ENV"
 
     echo ""
-    echo "Audit log  : /var/log/samba/log.audit"
-    echo "Audit web  : http://localhost:3092/audit"
+    echo "Audit log : /var/log/samba/log.audit"
+    echo "Audit web : http://localhost:3092/audit"
     echo "Shared web : http://localhost:3092/shared"
     echo "Shared dir : $SHARED_PATH"
-    echo "Tools dir  : $SMBSTACK_TOOLS"
-    echo "Env file   : $SMBSTACK_ENV"
+    echo "Tools dir : $SMBSTACK_TOOLS"
+    echo "Env file : $SMBSTACK_ENV"
     echo "Check conf : testparm"
     echo ""
     echo "NOTE: The shared folder is independent of the Samba installer."
-    echo "      To remove it, you must do so manually: rm -rf $SHARED_PATH"
-    echo "      To use a custom path, edit smb.conf and smbweb.conf manually after install."
+    echo "To remove it, you must do so manually: rm -rf $SHARED_PATH"
+    echo "To use a custom path, edit smb.conf and smbweb.conf manually after install."
     echo ""
     echo "DONE"
 }
@@ -612,11 +636,11 @@ do_update() {
     echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
     echo ""
 
-    # index.php: static, no placeholders, always (re)deployed — heals installs
+    # index.php: static, no placeholders, always (re)deployed -- heals installs
     # from before this file was added to do_install's copy list
     if [ -f "$WEB_DIR/index.php" ]; then
         cp -f "$WEB_DIR/index.php" "$SMBSTACK_WEB/index.php"
-        echo "  Updated: index.php"
+        echo "Updated: index.php"
     fi
 
     # web files (application code only - no user-customized config files)
@@ -638,7 +662,7 @@ do_update() {
         escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$dst"
         sed -i "s|compartida|$SHARED_NAME|g" "$dst"
-        echo "  Updated: $fname"
+        echo "Updated: $fname"
     done
 
     # tools
@@ -648,7 +672,7 @@ do_update() {
         cp -f "$SMBSTACK_TOOLS/$fname" "$SMBSTACK_TOOLS/$fname.bak" &>/dev/null
         cp -f "$f" "$SMBSTACK_TOOLS/$fname"
         chmod +x "$SMBSTACK_TOOLS/$fname"
-        echo "  Updated: $fname"
+        echo "Updated: $fname"
     done
 
     systemctl daemon-reload
@@ -739,9 +763,9 @@ do_status() {
     echo "=== Samba Services ==="
     for svc in smbd winbind; do
         if systemctl is-active --quiet "$svc"; then
-            echo "  $svc: RUNNING"
+            echo "$svc: RUNNING"
         else
-            echo "  $svc: STOPPED"
+            echo "$svc: STOPPED"
         fi
     done
 
@@ -749,24 +773,24 @@ do_status() {
     echo "=== Apache Ports ==="
     for port in 3092; do
         if ss -tlnp | grep -qE ":${port}[[:space:]]"; then
-            echo "  :$port OPEN"
+            echo ":$port OPEN"
         else
-            echo "  :$port CLOSED"
+            echo ":$port CLOSED"
         fi
     done
 
     echo ""
     echo "=== Audit Log ==="
     if [ -f /var/log/samba/log.audit ]; then
-        echo "  Last 5 entries:"
-        tail -5 /var/log/samba/log.audit | sed 's/^/    /'
+        echo "Last 5 entries:"
+        tail -5 /var/log/samba/log.audit | sed 's/^/ /'
     else
-        echo "  /var/log/samba/log.audit not found"
+        echo "/var/log/samba/log.audit not found"
     fi
 
     echo ""
     echo "=== smb.conf ==="
-    testparm -s 2>/dev/null | head -20 | sed 's/^/  /' || echo "  testparm not available"
+    testparm -s 2>/dev/null | head -20 | sed 's/^/ /' || echo " testparm not available"
 }
 
 ### MENU
@@ -774,11 +798,11 @@ show_menu() {
     echo ""
     echo "smbstack installer"
     echo "------------------"
-    echo "  1) Install"
-    echo "  2) Update"
-    echo "  3) Uninstall"
-    echo "  4) Status"
-    echo "  5) Exit"
+    echo "1) Install"
+    echo "2) Update"
+    echo "3) Uninstall"
+    echo "4) Status"
+    echo "5) Exit"
     echo ""
     read -p "Select option: " opt
     case "$opt" in
@@ -793,11 +817,11 @@ show_menu() {
 
 ### ARGUMENT HANDLING
 case "${1:-}" in
-    --install)   do_install ;;
-    --update)    do_update ;;
+    --install) do_install ;;
+    --update) do_update ;;
     --uninstall) do_uninstall ;;
-    --status)    do_status ;;
-    "")          show_menu ;;
+    --status) do_status ;;
+    "") show_menu ;;
     *)
         echo "Usage: $(basename "$0") [--install|--update|--uninstall|--status]"
         exit 1
