@@ -553,6 +553,10 @@ EOF
     SMBNAME="$local_user"
     while true; do
         read -s -p "Enter Samba password for $SMBNAME: " smb_pass; echo
+        if [ "${#smb_pass}" -lt 8 ]; then
+            echo "Password must be at least 8 characters. Try again."
+            continue
+        fi
         read -s -p "Confirm password: " smb_pass2; echo
         [ "$smb_pass" = "$smb_pass2" ] && break
         echo "Passwords do not match. Try again."

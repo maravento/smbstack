@@ -92,7 +92,9 @@ function write_audit($action, $file_path) {
     }
     $file_path = str_replace(["\r", "\n"], '', $file_path);
     $entry = "$timestamp $user smbd_audit: $ip|$user|$share|$action|ok|$file_path\n";
-    file_put_contents($log_file, $entry, FILE_APPEND | LOCK_EX);
+    if (file_put_contents($log_file, $entry, FILE_APPEND | LOCK_EX) === false) {
+        error_log("smbstack: failed to write audit log entry to $log_file");
+    }
 }
 
 // Blocks known script/executable extensions by checking the real extension
@@ -321,6 +323,10 @@ if (!in_array($msg, $allowed_msgs, true)) $msg = '';
 $parts = $request ? explode('/', trim($request, '/')) : [];
 
 $items = scandir($full_path);
+if ($items === false) {
+    http_response_code(500);
+    die('Unable to read directory.');
+}
 $dirs  = [];
 $files = [];
 
@@ -357,17 +363,47 @@ function get_icon($name) {
 
 $total_files = count($files);
 $total_dirs  = count($dirs);
-$total_size  = 0;
-$rdi = new RecursiveDirectoryIterator($full_path, RecursiveDirectoryIterator::SKIP_DOTS);
-// Prune .recycle from the walk entirely (not just from the total), both for
-// consistency with $total_files/$total_dirs above (which already exclude
-// it) and to avoid recursing into what can be a large trash subtree.
-$filtered = new RecursiveCallbackFilterIterator($rdi, function ($current) {
-    return $current->getFilename() !== '.recycle';
-});
-$rit = new RecursiveIteratorIterator($filtered, RecursiveIteratorIterator::LEAVES_ONLY);
-foreach ($rit as $item) {
-    if ($item->isFile()) $total_size += $item->getSize();
+
+// The recursive size below is purely informational (quota enforcement
+// happens independently in smbwatch.sh's own du -sb checks), so a short
+// cache is an acceptable trade-off against walking a potentially huge
+// subtree on every single page load. TTL, not mtime-based: content changes
+// deep in the tree don't update this folder's own mtime, so an mtime check
+// would not detect them and could serve a stale total indefinitely.
+define('SIZE_CACHE_DIR', '/var/www/smbstack/.size_cache');
+define('SIZE_CACHE_TTL', 30);
+
+function get_cached_total_size($path) {
+    $cache_file = SIZE_CACHE_DIR . '/' . md5($path) . '.cache';
+    $cached = @file_get_contents($cache_file);
+    if ($cached === false) return null;
+    $parts = explode('|', $cached, 2);
+    $size  = isset($parts[0]) ? (int)$parts[0] : 0;
+    $ts    = isset($parts[1]) ? (int)$parts[1] : 0;
+    return (time() - $ts < SIZE_CACHE_TTL) ? $size : null;
+}
+
+function set_cached_total_size($path, $size) {
+    if (!is_dir(SIZE_CACHE_DIR)) @mkdir(SIZE_CACHE_DIR, 0700, true);
+    $cache_file = SIZE_CACHE_DIR . '/' . md5($path) . '.cache';
+    @file_put_contents($cache_file, $size . '|' . time(), LOCK_EX);
+}
+
+$total_size = get_cached_total_size($full_path);
+if ($total_size === null) {
+    $total_size = 0;
+    $rdi = new RecursiveDirectoryIterator($full_path, RecursiveDirectoryIterator::SKIP_DOTS);
+    // Prune .recycle from the walk entirely (not just from the total), both for
+    // consistency with $total_files/$total_dirs above (which already exclude
+    // it) and to avoid recursing into what can be a large trash subtree.
+    $filtered = new RecursiveCallbackFilterIterator($rdi, function ($current) {
+        return $current->getFilename() !== '.recycle';
+    });
+    $rit = new RecursiveIteratorIterator($filtered, RecursiveIteratorIterator::LEAVES_ONLY);
+    foreach ($rit as $item) {
+        if ($item->isFile()) $total_size += $item->getSize();
+    }
+    set_cached_total_size($full_path, $total_size);
 }
 ?>
 <!DOCTYPE html>

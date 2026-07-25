@@ -3,7 +3,7 @@
 #
 ################################################################################
 #
-# smbstack - Shared Folder Watchdog
+# smbwatch - Shared Folder Watchdog
 # https://github.com/maravento/smbstack
 #
 # Monitors first-level subdirectories of the shared folder.
@@ -50,6 +50,17 @@ SMBSTACK_ENV="/var/www/smbstack/smbstack.env"
 PIDFILE="/var/run/smbstack-smbwatch.pid"
 STATEFILE="/var/run/smbstack-smbwatch.state"
 
+# $! only captures the PID of the last stage of the "inotifywait | while read"
+# pipeline (the subshell), not inotifywait itself. Guard against that PID
+# being alive on its own (or reused by an unrelated process) by also
+# confirming a real inotifywait process exists in the same process group.
+is_smbwatch_running() {
+    local pid="$1" pgid
+    kill -0 "$pid" 2>/dev/null || return 1
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+    [ -n "$pgid" ] && pgrep -g "$pgid" -x inotifywait >/dev/null 2>&1
+}
+
 ### CHECK DEPENDENCIES
 for pkg in inotify-tools; do
     dpkg -s "$pkg" >/dev/null 2>&1 || {
@@ -65,12 +76,27 @@ if [ ! -f "$SMBSTACK_ENV" ]; then
 fi
 
 load_env() {
+    # known_env_keys: all keys smbstack.env can legitimately contain (shared
+    # with smbinstall.sh/the web panel) -- not all of them are needed here,
+    # but they're not suspicious either, so they're skipped silently.
+    # needed_env_keys: the subset this script actually uses -- exported.
+    # Anything outside known_env_keys is genuinely unexpected and gets a WARNING.
+    local known_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
+    local needed_env_keys=" SHARED_PATH LOCAL_USER WATCH_LIMIT_GB WATCH_EXCLUDE "
     while IFS= read -r line; do
         if [[ "$line" =~ ^[A-Z_]+=.* ]]; then
             key="${line%%=*}"
             val="${line#*=}"
             val="${val//\"}"
-            export "$key=$val"
+            case "$needed_env_keys" in
+                *" $key "*) export "$key=$val" ;;
+                *)
+                    case "$known_env_keys" in
+                        *" $key "*) ;;
+                        *) log "WARNING: ignoring unknown key in $SMBSTACK_ENV: $key" ;;
+                    esac
+                    ;;
+            esac
         fi
     done < "$SMBSTACK_ENV"
 }
@@ -134,7 +160,7 @@ start() {
         exit 1
     fi
 
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    if [ -f "$PIDFILE" ] && is_smbwatch_running "$(cat "$PIDFILE")"; then
         log "SMBwatch is already running with PID $(cat "$PIDFILE")"
         exit 1
     fi
@@ -256,7 +282,7 @@ stop() {
 ### STATUS
 status() {
     log "SMBwatch status..."
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    if [ -f "$PIDFILE" ] && is_smbwatch_running "$(cat "$PIDFILE")"; then
         log "  SMBwatch is RUNNING (PID $(cat "$PIDFILE"))"
         log "  Watch limit : ${WATCH_LIMIT_GB} GB per folder"
         if [ -f "$STATEFILE" ]; then

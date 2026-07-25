@@ -3,7 +3,7 @@
 #
 ################################################################################
 #
-# smbstack - Service Watchdog
+# smbload - Service Watchdog
 # https://github.com/maravento/smbstack
 #
 # NOTE on logging:

@@ -755,6 +755,10 @@ EOF
 >
 > **Protección CSRF:** `web/shared.php` no tiene login por diseño — el acceso de invitado para toda la LAN (y el túnel, si está activo) es intencional. Lo que sí tiene es un token por sesión en los cuatro formularios que modifican estado (subir, nueva carpeta, nuevo archivo, papelera), de modo que un POST solo se acepta si realmente se cargó la página antes. Esto bloquea que un sitio malicioso ajeno autoenvíe un formulario a tu servidor a través del navegador de un visitante (CSRF); **no** restringe quién puede usar el explorador en sí — eso sigue gobernado únicamente por el alcance de red (LAN / túnel), igual que hoy.
 
+> **Folder size display:** the total size shown for the folder being browsed in `web/shared.php` is cached for 30 seconds per path, to avoid re-walking a potentially large subtree on every page load. This means the number can lag up to 30 seconds behind the real content — purely cosmetic, since quota enforcement is handled independently by `smbwatch.sh`'s own size checks, not by this display value.
+>
+> **Tamaño de carpeta mostrado:** el tamaño total mostrado para la carpeta que se está navegando en `web/shared.php` se cachea por 30 segundos por ruta, para evitar recorrer un subárbol potencialmente grande en cada carga de página. Esto significa que el número puede quedar hasta 30 segundos desactualizado respecto al contenido real — es puramente cosmético, ya que el cumplimiento de la cuota lo maneja de forma independiente `smbwatch.sh` con sus propios chequeos de tamaño, no este valor mostrado.
+
 **Optional tunnel:**
 - [Cloudflare Tunnel with Zero Trust Recommended](https://raw.githubusercontent.com/maravento/vault/master/scripts/bash/cftunnel.sh)
 
