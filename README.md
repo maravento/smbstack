@@ -272,6 +272,8 @@ smbstack/
 git clone --depth=1 https://github.com/maravento/smbstack.git
 cd smbstack
 sudo bash smbinstall.sh
+# or, to skip the menu and install directly | o, para saltar el menú e instalar directamente
+sudo bash smbinstall.sh --install
 ```
 
 The installer will prompt for:
@@ -317,7 +319,7 @@ sudo bash smbinstall.sh --uninstall
 
 | File | `--update` | `--uninstall` |
 |------|-----------|---------------|
-| `conf/smb.conf` | ⛔ not touched (user-customized) | ✅ restored from `.bak` |
+| `conf/smb.conf` | ⛔ not touched (user-customized) | ✅ restored from `.bak` if it exists (only created when the installer overwrote a pre-existing `smb.conf`; on a fresh install, no `.bak` exists and `smb.conf` is left untouched) |
 | `conf/fullaudit.conf` | ⛔ not touched (user-customized) | ✅ removed |
 | `web/smbweb.conf` | ⛔ not touched (user-customized) | ✅ removed |
 | `web/index.php` | ✅ overwritten | ✅ removed |

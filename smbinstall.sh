@@ -63,6 +63,14 @@ if ! local_user=$(detect_local_user); then
 fi
 echo "Using local user: $local_user"
 
+# DEPENDENCIES
+for dep in apache2 apache2-utils libapache2-mod-php php rsyslog logrotate; do
+    if ! dpkg -s "$dep" &>/dev/null; then
+        echo "ERROR: Required dependency '$dep' is not installed." >&2
+        exit 1
+    fi
+done
+
 retry_cmd() {
     local max_attempts=10
     local attempt=1
@@ -269,32 +277,13 @@ do_install() {
         exit 1
     fi
 
-    for cmd in apache2 a2ensite a2dissite a2enmod htpasswd php; do
-        if ! command -v "$cmd" &>/dev/null; then
-            echo "ERROR: $cmd not found. Run first:"
-            echo "apt-get install -y apache2 apache2-utils libapache2-mod-php"
-            echo "apt-get install -y --reinstall apache2-doc"
-            exit 1
-        fi
-    done
-
     if ! systemctl is-active --quiet apache2; then
         echo "ERROR: apache2 is not running. Start it first: systemctl start apache2"
         exit 1
     fi
 
-    if ! command -v rsyslogd &>/dev/null; then
-        echo "ERROR: rsyslog not found. Install it first: apt-get install -y rsyslog"
-        exit 1
-    fi
-
     if ! systemctl is-active --quiet rsyslog; then
         echo "ERROR: rsyslog is not running. Start it first: systemctl start rsyslog"
-        exit 1
-    fi
-
-    if ! command -v logrotate &>/dev/null; then
-        echo "ERROR: logrotate not found. Install it first: apt-get install -y logrotate"
         exit 1
     fi
 

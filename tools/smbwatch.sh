@@ -61,12 +61,12 @@ is_smbwatch_running() {
     [ -n "$pgid" ] && pgrep -g "$pgid" -x inotifywait >/dev/null 2>&1
 }
 
-### CHECK DEPENDENCIES
-for pkg in inotify-tools; do
-    dpkg -s "$pkg" >/dev/null 2>&1 || {
-        log "ERROR: '$pkg' is missing. Run: sudo apt install $pkg"
+### DEPENDENCIES
+for dep in inotify-tools procps coreutils findutils cron; do
+    if ! dpkg -s "$dep" &>/dev/null; then
+        log "ERROR: Required dependency '$dep' is not installed."
         exit 1
-    }
+    fi
 done
 
 ### LOAD ENV
