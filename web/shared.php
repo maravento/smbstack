@@ -604,6 +604,49 @@ if ($total_size === null) {
         footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #94a3b8; }
         footer a { color: #94a3b8; text-decoration: none; }
         footer a:hover { color: #2563eb; }
+
+        .preview-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .preview-modal.open { display: flex; }
+        .preview-modal-inner {
+            position: relative;
+            max-width: 90vw;
+            max-height: 90vh;
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        body.dark .preview-modal-inner { background: #141721; }
+        .preview-modal-inner img { display: block; max-width: 100%; max-height: 80vh; margin: auto; }
+        .preview-modal-inner iframe { width: 80vw; height: 80vh; border: none; }
+        .preview-close {
+            position: absolute;
+            top: -0.6rem;
+            right: -0.6rem;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 2rem;
+            height: 2rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .upload-area.drag-over { outline: 2px dashed #2563eb; outline-offset: -4px; background: #eff6ff; }
+        body.dark .upload-area.drag-over { background: #14213a; }
+        .upload-hint { font-size: 0.78rem; color: #94a3b8; margin-top: 0.5rem; }
+        .upload-progress { margin-top: 0.6rem; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: none; }
+        .upload-progress-bar { height: 100%; width: 0%; background: #16a34a; transition: width 0.15s; }
+        body.dark .upload-progress { background: #232838; }
     </style>
 </head>
 <body>
@@ -653,22 +696,19 @@ if ($total_size === null) {
     </div>
 </div>
 
-<div class="upload-area" id="upload-area">
-    <form method="POST" enctype="multipart/form-data">
+<div class="upload-area" id="upload-area" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleUploadDrop(event)">
+    <form method="POST" enctype="multipart/form-data" id="upload-form" onsubmit="return handleUploadSubmit(event)">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
         <label class="btn btn-secondary" style="cursor:pointer;margin:0">
             📂 Select Files
-            <input type="file" name="upload[]" required multiple style="display:none" onchange="
-                var n = this.files.length;
-                this.parentElement.nextElementSibling.textContent = n === 1
-                    ? '✔️ ' + this.files[0].name.substring(0,40)
-                    : '✔️ ' + n + ' files selected';
-            ">
+            <input type="file" name="upload[]" id="upload-input" required multiple style="display:none" onchange="updateUploadLabel(this)">
         </label>
-        <span style="color:#6c757d;font-size:0.85rem;flex:1"></span>
-        <button type="submit" class="btn btn-success" id="btn-send" onclick="this.disabled=true;this.textContent='⏳ Uploading...';this.form.submit()">⬆️ Send</button>
+        <span id="upload-filenames" style="color:#6c757d;font-size:0.85rem;flex:1"></span>
+        <button type="submit" class="btn btn-success" id="btn-send">⬆️ Send</button>
         <button type="button" class="btn btn-secondary" onclick="document.getElementById('upload-area').classList.remove('open')">✖️ Cancel</button>
     </form>
+    <div class="upload-progress" id="upload-progress"><div class="upload-progress-bar" id="upload-progress-bar"></div></div>
+    <div class="upload-hint">or drag &amp; drop files here</div>
 </div>
 
 <div class="mkdir-area" id="mkdir-area">
@@ -761,6 +801,9 @@ if ($total_size === null) {
             $size      = filesize($file_full);
             $mtime     = filemtime($file_full);
             $dl_url    = '/shared/files/' . implode('/', array_map('rawurlencode', explode('/', ltrim($rel, '/'))));
+            $ext       = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            $is_image  = in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true);
+            $is_pdf    = $ext === 'pdf';
         ?>
             <tr>
                 <td>
@@ -772,7 +815,13 @@ if ($total_size === null) {
                 <td class="muted"><?= format_size($size) ?></td>
                 <td class="muted"><?= date('Y-m-d H:i', $mtime) ?></td>
                 <td><div class="action-cell">
+                    <?php if ($is_image): ?>
+                    <button type="button" class="btn btn-primary" onclick="openPreview('<?= htmlspecialchars($dl_url, ENT_QUOTES) ?>','image')">👁️ Preview</button>
+                    <?php elseif ($is_pdf): ?>
+                    <button type="button" class="btn btn-primary" onclick="openPreview('<?= htmlspecialchars($dl_url, ENT_QUOTES) ?>','pdf')">👁️ Preview</button>
+                    <?php else: ?>
                     <a class="btn btn-primary" href="<?= htmlspecialchars($dl_url) ?>" target="_blank">👁️ View</a>
+                    <?php endif; ?>
                     <a class="btn btn-success" href="<?= htmlspecialchars($dl_url) ?>" download>⬇️ Download</a>
                     <?php if (substr_count($rel, '/') >= 1): ?>
                     <form method="POST" style="display:inline" onsubmit="return confirm('Move this file to recycle bin?')">
@@ -797,7 +846,86 @@ if ($total_size === null) {
     &mdash; maravento.com
 </footer>
 
+<div class="preview-modal" id="preview-modal" onclick="if (event.target === this) closePreview()">
+    <div class="preview-modal-inner">
+        <button class="preview-close" onclick="closePreview()">✖️</button>
+        <div id="preview-content"></div>
+    </div>
+</div>
+
 <script>
+function openPreview(url, type) {
+    var content = document.getElementById('preview-content');
+    content.innerHTML = '';
+    if (type === 'image') {
+        var img = document.createElement('img');
+        img.src = url;
+        content.appendChild(img);
+    } else if (type === 'pdf') {
+        var frame = document.createElement('iframe');
+        frame.src = url;
+        content.appendChild(frame);
+    }
+    document.getElementById('preview-modal').classList.add('open');
+}
+
+function closePreview() {
+    document.getElementById('preview-modal').classList.remove('open');
+    document.getElementById('preview-content').innerHTML = '';
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closePreview();
+});
+
+function updateUploadLabel(input) {
+    var n = input.files.length;
+    document.getElementById('upload-filenames').textContent = n === 1
+        ? '✔️ ' + input.files[0].name.substring(0, 40)
+        : n ? '✔️ ' + n + ' files selected' : '';
+}
+
+function handleUploadDrop(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    var input = document.getElementById('upload-input');
+    if (e.dataTransfer && e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        updateUploadLabel(input);
+    }
+}
+
+function handleUploadSubmit(e) {
+    e.preventDefault();
+    var form = document.getElementById('upload-form');
+    var btn = document.getElementById('btn-send');
+    var progressWrap = document.getElementById('upload-progress');
+    var progressBar = document.getElementById('upload-progress-bar');
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', window.location.href, true);
+    xhr.upload.onprogress = function(evt) {
+        if (evt.lengthComputable) {
+            progressBar.style.width = Math.round((evt.loaded / evt.total) * 100) + '%';
+        }
+    };
+    btn.disabled = true;
+    btn.textContent = '⏳ Uploading...';
+    progressWrap.style.display = 'block';
+    progressBar.style.width = '0%';
+    xhr.onload = function() {
+        window.location = xhr.responseURL || window.location.href;
+    };
+    xhr.onerror = function() {
+        btn.disabled = false;
+        btn.textContent = '⬆️ Send';
+        progressWrap.style.display = 'none';
+        alert('Upload failed. Please check your connection and try again.');
+    };
+    xhr.send(new FormData(form));
+    return false;
+}
+
 function initTheme() {
     var saved = '';
     try { saved = localStorage.getItem('smbstack_theme') || ''; } catch (e) {}

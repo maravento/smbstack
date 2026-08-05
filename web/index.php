@@ -23,6 +23,9 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SMBstack</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <meta name="theme-color" content="#2c3e50">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -241,6 +244,10 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
         }
     }
     initTheme();
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(function() {});
+    }
 </script>
 
 </body>

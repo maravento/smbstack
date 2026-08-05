@@ -90,6 +90,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 CONF_DIR="$SCRIPT_DIR/conf"
 WEB_DIR="$SCRIPT_DIR/web"
 TOOLS_DIR="$SCRIPT_DIR/tools"
+ACL_DIR="$SCRIPT_DIR/acl"
 SMBSTACK_WWW="/var/www/smbstack"
 SMBSTACK_WEB="$SMBSTACK_WWW/web"
 SMBSTACK_TOOLS="$SMBSTACK_WWW/tools"
@@ -98,7 +99,7 @@ SMBSTACK_ENV="$SMBSTACK_WWW/smbstack.env"
 ### REPOSITORY STRUCTURE CHECK
 check_repo() {
     local missing=0
-    for dir in "$CONF_DIR" "$WEB_DIR" "$TOOLS_DIR"; do
+    for dir in "$CONF_DIR" "$WEB_DIR" "$TOOLS_DIR" "$ACL_DIR"; do
         if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
             missing=1
             break
@@ -336,6 +337,9 @@ do_install() {
     cp -f "$WEB_DIR/smbapi.php" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/smbaudit-diagnostic.php" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/shared.php" "$SMBSTACK_WEB/"
+    cp -f "$WEB_DIR/manifest.json" "$SMBSTACK_WEB/"
+    cp -f "$WEB_DIR/sw.js" "$SMBSTACK_WEB/"
+    cp -f "$WEB_DIR/icon.svg" "$SMBSTACK_WEB/"
     chmod -R 755 "$SMBSTACK_WEB"
     chown -R www-data:www-data "$SMBSTACK_WEB"
 
@@ -484,6 +488,12 @@ EOF
         apply_smb_conf_interfaces
     fi
 
+    # veto list (static, optional -- see the commented "include" line in smb.conf)
+    mkdir -p /etc/samba/acl
+    cp -f "$ACL_DIR/commonveto.txt" /etc/samba/acl/commonveto.txt
+    chmod 644 /etc/samba/acl/commonveto.txt
+    chown root:root /etc/samba/acl/commonveto.txt
+
     # rsyslog
     cp -f /etc/rsyslog.conf{,.bak} &>/dev/null
     sed -i -E 's/^(\s*(\$FileOwner|\$FileGroup|\$FileCreateMode|\$DirCreateMode|\$Umask|\$PrivDropToUser|\$PrivDropToGroup)\b.*)/#\1/' /etc/rsyslog.conf
@@ -629,12 +639,15 @@ do_update() {
     echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
     echo ""
 
-    # index.php: static, no placeholders, always (re)deployed -- heals installs
-    # from before this file was added to do_install's copy list
-    if [ -f "$WEB_DIR/index.php" ]; then
-        cp -f "$WEB_DIR/index.php" "$SMBSTACK_WEB/index.php"
-        echo "Updated: index.php"
-    fi
+    # index.php, manifest.json, sw.js, icon.svg: static, no placeholders,
+    # always (re)deployed -- heals installs from before these files were
+    # added to do_install's copy list
+    for fname in index.php manifest.json sw.js icon.svg; do
+        if [ -f "$WEB_DIR/$fname" ]; then
+            cp -f "$WEB_DIR/$fname" "$SMBSTACK_WEB/$fname"
+            echo "Updated: $fname"
+        fi
+    done
 
     # web files (application code only - no user-customized config files)
     for src in "$WEB_DIR"/*; do
