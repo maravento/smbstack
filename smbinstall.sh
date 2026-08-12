@@ -192,7 +192,6 @@ select_shared_folder() {
         fi
         # root ACL: mask r-x (blocks group write on root), default mask rwx (allows group write in subdirs)
         setfacl -m mask::r-x "$SHARED_PATH"
-        setfacl -d -m u:www-data:r-x "$SHARED_PATH"
         setfacl -d -m g:sambashare:rwx "$SHARED_PATH"
         setfacl -d -m mask::rwx "$SHARED_PATH"
         # recycle bin
@@ -217,7 +216,6 @@ select_shared_folder() {
         find "$SHARED_PATH" -mindepth 1 -type f -exec chown "$local_user":sambashare {} \; -exec chmod 664 {} \;
         setfacl -m u:www-data:r-x "$SHARED_PATH"
         setfacl -m mask::r-x "$SHARED_PATH"
-        setfacl -d -m u:www-data:r-x "$SHARED_PATH"
         setfacl -d -m g:sambashare:rwx "$SHARED_PATH"
         setfacl -d -m mask::rwx "$SHARED_PATH"
         # recycle bin
@@ -332,6 +330,9 @@ do_install() {
     chmod 640 /var/log/smbwatch.log
 
     mkdir -p "$SMBSTACK_WEB"
+    mkdir -p "$SMBSTACK_WWW/.size_cache"
+    chown www-data:www-data "$SMBSTACK_WWW/.size_cache"
+    chmod 700 "$SMBSTACK_WWW/.size_cache"
     cp -f "$WEB_DIR/index.php" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/smbaudit.html" "$SMBSTACK_WEB/"
     cp -f "$WEB_DIR/smbapi.php" "$SMBSTACK_WEB/"
@@ -680,6 +681,10 @@ do_update() {
         chmod +x "$SMBSTACK_TOOLS/$fname"
         echo "Updated: $fname"
     done
+
+    mkdir -p "$SMBSTACK_WWW/.size_cache"
+    chown www-data:www-data "$SMBSTACK_WWW/.size_cache"
+    chmod 700 "$SMBSTACK_WWW/.size_cache"
 
     systemctl daemon-reload
     systemctl restart smbd winbind rsyslog apache2

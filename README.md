@@ -3,7 +3,6 @@
 [![status-maintained](https://img.shields.io/badge/status-maintained-purple.svg)](https://github.com/maravento/smbstack)
 [![last commit](https://img.shields.io/github/last-commit/maravento/smbstack)](https://github.com/maravento/smbstack)
 [![Stargazers](https://img.shields.io/github/stars/maravento/smbstack?label=Stargazers)](https://github.com/maravento/smbstack/stargazers)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/maravento/smbstack)
 [![Twitter Follow](https://img.shields.io/twitter/follow/maraventostudio.svg)](https://twitter.com/maraventostudio)
 
 <!-- markdownlint-disable MD033 -->
@@ -236,31 +235,30 @@ apt-get install -y --reinstall apache2-doc
 
 ```
 smbstack/
-├── smbinstall.sh               # Installer: install, update, uninstall, status
-├── README.md
-├── acl/                         # Static ACLs deployed to /etc/samba/acl/
-│   └── commonveto.txt          # Veto list for common unwanted file types (active by default in smb.conf)
-├── conf/                       # Configuration files deployed to system paths
-│   ├── smb.conf                # Samba main config (placeholders: your_user, compartida)
-│   └── fullaudit.conf          # rsyslog full audit rule
-├── img/
-│   ├── smbstack-main.png
-│   ├── smbstack-files.png
+├── acl/                         # Static access-control lists for Samba
+│   └── commonveto.txt              # Veto list for common unwanted file types (active by default in smb.conf)
+├── conf/                        # Samba and rsyslog configuration
+│   ├── fullaudit.conf              # rsyslog full audit rule
+│   └── smb.conf                    # Samba main config (placeholders: your_user, compartida)
+├── img/                            # Screenshots used throughout this README
 │   ├── smbstack-botton.png
+│   ├── smbstack-files.png
+│   ├── smbstack-main.png
 │   └── smbstack-views.png
-├── web/                        # Web files deployed to /var/www/smbstack/web/
-│   ├── smbweb.conf             # Apache vhost (:3092/?tab=audit and :3092/?tab=shared)
-│   ├── index.php               # Main page (Audit / Shared tabs)
-│   ├── smbaudit.html           # Audit log viewer UI
-│   ├── smbapi.php              # Audit log reader API
-│   ├── smbaudit-diagnostic.php # Audit log diagnostic tool
-│   ├── shared.php              # Shared folder dynamic browser
-│   ├── manifest.json           # PWA manifest
-│   ├── sw.js                   # PWA service worker (app-shell cache only)
-│   └── icon.svg                # PWA / apple-touch icon
-└── tools/                      # Scripts deployed to /var/www/smbstack/tools/
-    ├── smbload.sh              # Service watchdog (smbd + winbind)
-    └── smbwatch.sh             # Shared folder size monitor (self-managed)
+├── tools/                      # Background watchdog scripts
+│   ├── smbload.sh                  # Service watchdog (smbd + winbind)
+│   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
+├── web/                        # Web front-end for the audit log viewer and shared-folder browser
+│   ├── icon.svg                    # PWA / apple-touch icon
+│   ├── index.php                   # Main page (Audit / Shared tabs)
+│   ├── manifest.json               # PWA manifest
+│   ├── shared.php                  # Shared folder dynamic browser
+│   ├── smbapi.php                  # Audit log reader API
+│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool
+│   ├── smbaudit.html               # Audit log viewer UI
+│   ├── smbweb.conf                 # Apache vhost (:3092/?tab=audit and :3092/?tab=shared)
+│   └── sw.js                       # PWA service worker (app-shell cache only)
+└── smbinstall.sh               # Installer: install, update, uninstall, status
 ```
 
 <table>
@@ -276,6 +274,7 @@ smbstack/
 
 ```
 /var/www/smbstack/
+├── .size_cache/                # Folder size cache used by shared.php (www-data, created by the installer)
 └── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
 
 /var/log/smbwatch.log           # smbwatch.sh runtime log
@@ -853,8 +852,8 @@ EOF
 
 | Content | Licensed Under |
 |---|---|
-|Scripts, Binaries, Infrastructure|[![GPL-3.0](https://img.shields.io/badge/Open_Core-GPLv3-blue.svg?style=for-the-badge&labelWidth=120&logoWidth=20)](https://www.gnu.org/licenses/gpl.txt)|
-|RAG, Workers, Specialized Modules, Docs|[![CC](https://img.shields.io/badge/Core_Engine-CC_BY--NC--ND_4.0-lightgrey.svg?style=for-the-badge&labelWidth=120&logoWidth=20)](https://creativecommons.org/licenses/by-nc-nd/4.0/)|
+|Scripts, Binaries, Infrastructure|[![GPL-3.0](https://img.shields.io/badge/Open_Core-GPLv3-blue.svg?style=for-the-badge&labelWidth=120&logoWidth=20)](LICENSE)|
+|RAG, Workers, Specialized Modules, Docs|[![CC](https://img.shields.io/badge/Core_Engine-CC_BY--NC--ND_4.0-lightgrey.svg?style=for-the-badge&labelWidth=120&logoWidth=20)](docs/LICENSE-CC-BY-NC-ND-4.0.md)|
 
 ## DISCLAIMER
 

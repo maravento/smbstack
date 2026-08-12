@@ -107,6 +107,7 @@ function strip_dangerous_extension($name) {
     $blocked = [
         'php', 'php1', 'php2', 'php3', 'php4', 'php5', 'php6', 'php7', 'php8', 'php9',
         'phtml', 'pht', 'phar', 'cgi', 'pl', 'asp', 'aspx', 'jsp', 'sh',
+        'exe', 'bat', 'cmd', 'com', 'vbs', 'wsf', 'wsh', 'au3', 'reg', 'sys', 'js', 'py',
         'htaccess', 'htm', 'html', 'shtml', 'svg', 'xml',
     ];
     if (in_array($ext, $blocked, true)) {
