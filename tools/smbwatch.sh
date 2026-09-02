@@ -13,6 +13,11 @@
 # used by the web interface).
 # Folders listed in WATCH_EXCLUDE are not monitored (no size limit).
 #
+# The folder list is built once at startup. First-level folders can only be
+# created by the administrator from the server shell (SMB clients and the web
+# panel are blocked at the share root), so after adding one, restart smbwatch
+# to include it.
+#
 # smbstack.env variables:
 #  WATCH_LIMIT_GB  : size limit per monitored folder in GB (default: 10)
 #  WATCH_EXCLUDE   : comma-separated folder names to exclude from monitoring
@@ -41,14 +46,21 @@ log() {
 
 ## root check
 if [ "$(id -u)" != "0" ]; then
-    log "ERROR: This script must be run as root"
+    log "ERROR: This script must be run as root -- abort"
     exit 1
 fi
 
 ### PATHS
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+SCRIPT_PATH="$SCRIPT_DIR/$(basename "$0")"
 SMBSTACK_ENV="/var/www/smbstack/smbstack.env"
-PIDFILE="/var/run/smbstack-smbwatch.pid"
-STATEFILE="/var/run/smbstack-smbwatch.state"
+RUN_DIR="/run"
+mkdir -p "$RUN_DIR"
+PIDFILE="$RUN_DIR/smbstack-smbwatch.pid"
+STATEFILE="$RUN_DIR/smbstack-smbwatch.state"
+
+# VALIDATION -- integer only; use directly with =~
+_UH_UINT='^(0|[1-9][0-9]*)$'
 
 # $! only captures the PID of the last stage of the "inotifywait | while read"
 # pipeline (the subshell), not inotifywait itself. Guard against that PID
@@ -62,9 +74,9 @@ is_smbwatch_running() {
 }
 
 ### DEPENDENCIES
-for dep in inotify-tools procps coreutils findutils cron; do
+for dep in inotify-tools procps coreutils findutils cron util-linux; do
     if ! dpkg -s "$dep" &>/dev/null; then
-        log "ERROR: Required dependency '$dep' is not installed."
+        log "ERROR: dependency '$dep' is not installed -- abort"
         exit 1
     fi
 done
@@ -126,7 +138,7 @@ handle_new_file() {
 
     local SIZE
     SIZE=$(du -sb "$TOP_DIR" 2>/dev/null | awk '{print $1}')
-    [[ "$SIZE" =~ ^[0-9]+$ ]] || SIZE=0
+    [[ "$SIZE" =~ $_UH_UINT ]] || SIZE=0
 
     if [ "$SIZE" -ge "$LIMIT" ]; then
         mkdir -p "$RECYCLE_DIR"
@@ -156,7 +168,7 @@ start() {
     (umask 077; : >> "$SCRIPT_LOCK")
     exec 200>"$SCRIPT_LOCK"
     if ! flock -n 200; then
-        log "Script $(basename "$0") is already running"
+        log "ERROR: script $(basename "$0") is already running -- abort"
         exit 1
     fi
 
@@ -176,7 +188,7 @@ start() {
         while true; do
             read -p "Enter watch limit per folder in GB [10]: " input_limit
             input_limit="${input_limit:-10}"
-            if [[ "$input_limit" =~ ^[0-9]+$ ]] && [ "$input_limit" -gt 0 ] && [ "$input_limit" -le 10000 ]; then
+            if [[ "$input_limit" =~ $_UH_UINT ]] && [ "$input_limit" -gt 0 ] && [ "$input_limit" -le 10000 ]; then
                 WATCH_LIMIT_GB="$input_limit"
                 set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
                 log "Watch limit set to ${WATCH_LIMIT_GB} GB"
@@ -250,8 +262,8 @@ start() {
 
     # add @reboot cron entry if not already present
     if ! crontab -l 2>/dev/null | grep -q "smbwatch.sh start"; then
-        crontab -l 2>/dev/null > "/var/www/smbstack/tools/crontab-$(date +%Y%m%d%H%M%S).bak" || true
-        (crontab -l 2>/dev/null; echo "@reboot /var/www/smbstack/tools/smbwatch.sh start") | crontab -
+        crontab -l 2>/dev/null > "$SCRIPT_DIR/crontab-$(date +%Y%m%d%H%M%S).bak" || true
+        (crontab -l 2>/dev/null; echo "@reboot $SCRIPT_PATH start") | crontab -
         log "Added to cron @reboot"
     fi
 }

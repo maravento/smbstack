@@ -12,7 +12,7 @@ set -uo pipefail
 
 ## root check
 if [ "$(id -u)" != "0" ]; then
-    echo "ERROR: This script must be run as root"
+    echo "ERROR: This script must be run as root -- abort"
     exit 1
 fi
 
@@ -21,7 +21,7 @@ SCRIPT_LOCK="/var/lock/$(basename "$0" .sh).lock"
 (umask 077; : >> "$SCRIPT_LOCK")
 exec 200>"$SCRIPT_LOCK"
 if ! flock -n 200; then
-    echo "Script $(basename "$0") is already running"
+    echo "ERROR: script $(basename "$0") is already running -- abort"
     exit 1
 fi
 
@@ -64,9 +64,9 @@ fi
 echo "Using local user: $local_user"
 
 # DEPENDENCIES
-for dep in apache2 apache2-utils libapache2-mod-php php rsyslog logrotate; do
+for dep in apache2 apache2-utils libapache2-mod-php php rsyslog logrotate acl openssl cron iproute2 sudo systemd util-linux; do
     if ! dpkg -s "$dep" &>/dev/null; then
-        echo "ERROR: Required dependency '$dep' is not installed." >&2
+        echo "ERROR: dependency '$dep' is not installed -- abort" >&2
         exit 1
     fi
 done
@@ -95,6 +95,17 @@ SMBSTACK_WWW="/var/www/smbstack"
 SMBSTACK_WEB="$SMBSTACK_WWW/web"
 SMBSTACK_TOOLS="$SMBSTACK_WWW/tools"
 SMBSTACK_ENV="$SMBSTACK_WWW/smbstack.env"
+
+# VALIDATION -- one variable per thing validated; use directly with =~
+_UH_OCT='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
+_UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
+_UH_CIDR='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])/(3[0-2]|[12][0-9]|[0-9])$'
+_UH_NETMASK='^(0\.0\.0\.0|128\.0\.0\.0|192\.0\.0\.0|224\.0\.0\.0|240\.0\.0\.0|248\.0\.0\.0|252\.0\.0\.0|254\.0\.0\.0|255\.0\.0\.0|255\.128\.0\.0|255\.192\.0\.0|255\.224\.0\.0|255\.240\.0\.0|255\.248\.0\.0|255\.252\.0\.0|255\.254\.0\.0|255\.255\.0\.0|255\.255\.128\.0|255\.255\.192\.0|255\.255\.224\.0|255\.255\.240\.0|255\.255\.248\.0|255\.255\.252\.0|255\.255\.254\.0|255\.255\.255\.0|255\.255\.255\.128|255\.255\.255\.192|255\.255\.255\.224|255\.255\.255\.240|255\.255\.255\.248|255\.255\.255\.252|255\.255\.255\.254|255\.255\.255\.255)$'
+_UH_DNS='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])(,(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9]))*$'
+_UH_UINT='^(0|[1-9][0-9]*)$'
+_UH_FQDN='^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+_UH_MAC='^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$'
+_UH_PREFIX='0.0.0.0:0 128.0.0.0:1 192.0.0.0:2 224.0.0.0:3 240.0.0.0:4 248.0.0.0:5 252.0.0.0:6 254.0.0.0:7 255.0.0.0:8 255.128.0.0:9 255.192.0.0:10 255.224.0.0:11 255.240.0.0:12 255.248.0.0:13 255.252.0.0:14 255.254.0.0:15 255.255.0.0:16 255.255.128.0:17 255.255.192.0:18 255.255.224.0:19 255.255.240.0:20 255.255.248.0:21 255.255.252.0:22 255.255.254.0:23 255.255.255.0:24 255.255.255.128:25 255.255.255.192:26 255.255.255.224:27 255.255.255.240:28 255.255.255.248:29 255.255.255.252:30 255.255.255.254:31 255.255.255.255:32'
 
 ### REPOSITORY STRUCTURE CHECK
 check_repo() {
@@ -361,7 +372,6 @@ do_install() {
     # replace placeholders in deployed files (not in repo)
     for f in \
         /etc/apache2/sites-available/smbweb.conf \
-        /etc/rsyslog.d/fullaudit.conf \
         "$SMBSTACK_WEB/smbaudit.html" \
         "$SMBSTACK_WEB/smbapi.php" \
         "$SMBSTACK_WEB/smbaudit-diagnostic.php" \
@@ -416,7 +426,7 @@ EOF
         while true; do
             read -p "Enter Samba server IP/network [192.168.1.0/24]: " SMB_NET
             SMB_NET="${SMB_NET:-192.168.1.0/24}"
-            if ! [[ "$SMB_NET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+            if ! [[ "$SMB_NET" =~ $_UH_CIDR ]]; then
                 echo "ERROR: Invalid format. Expected x.x.x.x/xx (e.g. 192.168.1.0/24)"
                 SMB_NET=""
             else
@@ -535,7 +545,7 @@ EOF
 
     # detect server IP from SMB_IFACE
     SERVER_IP=$(ip -4 addr show "$SMB_IFACE" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
-    if [ -z "$SERVER_IP" ]; then
+    if ! [[ "$SERVER_IP" =~ $_UH_IPV4 ]]; then
         echo "WARNING: Could not detect IP for interface $SMB_IFACE"
         echo "The web panel will keep listening on all interfaces (0.0.0.0:3092)."
         SERVER_IP=""
@@ -806,24 +816,27 @@ do_status() {
 
 ### MENU
 show_menu() {
-    echo ""
-    echo "smbstack installer"
-    echo "------------------"
-    echo "1) Install"
-    echo "2) Update"
-    echo "3) Uninstall"
-    echo "4) Status"
-    echo "5) Exit"
-    echo ""
-    read -p "Select option: " opt
-    case "$opt" in
-        1) do_install ;;
-        2) do_update ;;
-        3) do_uninstall ;;
-        4) do_status ;;
-        5) exit 0 ;;
-        *) echo "Invalid option"; show_menu ;;
-    esac
+    while true; do
+        echo ""
+        echo "smbstack installer"
+        echo "------------------"
+        echo "1) Install"
+        echo "2) Update"
+        echo "3) Uninstall"
+        echo "4) Status"
+        echo "5) Exit"
+        echo ""
+        read -p "Select option [5]: " opt
+        opt="${opt:-5}"
+        case "$opt" in
+            1) do_install; break ;;
+            2) do_update; break ;;
+            3) do_uninstall; break ;;
+            4) do_status; break ;;
+            5) exit 0 ;;
+            *) echo "ERROR: Invalid option" ;;
+        esac
+    done
 }
 
 ### ARGUMENT HANDLING

@@ -293,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
             // keeptree: mirror the item's original subfolder path under
             // today's date folder, e.g. "LOCALSEND/foto.jpg" ->
             // .recycle/www-data/20260622/LOCALSEND/foto.jpg
-            $item_parent = dirname($item_rel);
+            $item_parent = dirname(ltrim($rel_from_base, '/'));
             $dest_dir    = $item_parent === '.' ? $recycle_root : $recycle_root . '/' . $item_parent;
             if (!is_dir($dest_dir)) mkdir($dest_dir, 0775, true);
 
