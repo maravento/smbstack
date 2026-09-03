@@ -18,6 +18,10 @@
   </tr>
 </table>
 
+### Architecture
+
+📐 [Runtime Architecture Diagram](https://htmlpreview.github.io/?https://raw.githubusercontent.com/maravento/smbstack/master/docs/smbstack-architecture.html) — visual walkthrough of the web/audit/recycle pipeline.
+
 ## Requirements
 
 ---
@@ -28,10 +32,11 @@
 - `rsyslog`, `logrotate`
 - `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd` (checked by `smbinstall.sh`)
 - `inotify-tools`, `procps`, `coreutils`, `findutils` (checked by `tools/smbwatch.sh`)
+- `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed` (checked by `tools/smbload.sh`)
 
 ```bash
 apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
-    acl openssl cron iproute2 sudo systemd inotify-tools procps coreutils findutils
+    acl openssl cron iproute2 sudo systemd inotify-tools procps coreutils findutils zip
 apt-get install -y --reinstall apache2-doc
 ```
 
@@ -187,7 +192,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
         <li>Deploys a web-based audit log viewer at <code>http://localhost:3092/?tab=audit</code></li>
         <li>Deploys a web-based shared folder browser at <code>http://localhost:3092/?tab=shared</code></li>
         <li>Configures logrotate for all Samba logs</li>
-        <li>Installs a service watchdog (<code>smbload.sh</code>) via cron <code>@reboot</code></li>
+        <li>Installs a service watchdog (<code>smbload.sh</code>) via cron every 5 minutes</li>
         <li>Installs a shared folder size monitor (<code>smbwatch.sh</code>) — self-managed, independent of the installer</li>
         <li>Saves installation config to <code>/var/www/smbstack/smbstack.env</code> for future updates</li>
         <li>NetBIOS disabled by default (enable manually if needed, see <a href="#netbios">NetBIOS</a> section)</li>
@@ -201,7 +206,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
         <li>Despliega un visor web de auditoría en <code>http://localhost:3092/?tab=audit</code></li>
         <li>Despliega un explorador web de la carpeta compartida en <code>http://localhost:3092/?tab=shared</code></li>
         <li>Configura logrotate para todos los logs de Samba</li>
-        <li>Instala un watchdog de servicios (<code>smbload.sh</code>) vía cron <code>@reboot</code></li>
+        <li>Instala un watchdog de servicios (<code>smbload.sh</code>) vía cron cada 5 minutos</li>
         <li>Instala un monitor de espacio de la carpeta compartida (<code>smbwatch.sh</code>) — autogestionado, independiente del instalador</li>
         <li>Guarda la configuración de instalación en <code>/var/www/smbstack/smbstack.env</code> para futuras actualizaciones</li>
         <li>NetBIOS deshabilitado por defecto (actívalo manualmente si lo necesitas, ver sección <a href="#netbios">NetBIOS</a>)</li>
@@ -251,7 +256,7 @@ smbstack/
 │   ├── smbstack-main.png
 │   └── smbstack-views.png
 ├── tools/                      # Background watchdog scripts
-│   ├── smbload.sh                  # Service watchdog (smbd + winbind)
+│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch)
 │   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
 ├── web/                        # Web front-end for the audit log viewer and shared-folder browser
 │   ├── icon.svg                    # PWA / apple-touch icon
@@ -281,10 +286,12 @@ smbstack/
 ```
 /var/www/smbstack/
 ├── .size_cache/                # Folder size cache used by shared.php (www-data, created by the installer)
-├── backups/                    # Previous copy of each web file, saved by --update
-├── tools/                      # Deployed copy of tools/*.sh (plus .bak from --update)
+├── tools/                      # Deployed copy of tools/*.sh
 ├── web/                        # Deployed copy of web/ (served by Apache on :3092)
 └── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
+
+/etc/bak/smbstack/              # Archives written by --update (smbstackbak_<YYYYMMDD_HHMM>.zip, last 3 kept)
+/etc/bak/crontab/root.bak       # Copy of root's crontab, taken before any cron entry is added or removed
 
 /var/log/smbwatch.log           # smbwatch.sh runtime log (root:root, 640)
 /var/log/smbload.log            # smbload.sh runtime log
@@ -300,6 +307,10 @@ smbstack/
 
 /etc/samba/acl/commonveto.txt   # Copied from acl/commonveto.txt by the installer
 ```
+
+> Before adding or removing any cron entry, `smbinstall.sh` and `tools/smbwatch.sh` copy root's crontab to `/etc/bak/crontab/root.bak`. It is a single copy, overwritten on every run, shared with every other project that touches the same crontab, and it is never restored automatically. `--uninstall` does not restore it either: it deletes only its own entries, matched by the full script path, and leaves every other cron job untouched. To roll back, restore the copy by hand with `crontab /etc/bak/crontab/root.bak`.
+>
+> Antes de agregar o quitar cualquier entrada de cron, `smbinstall.sh` y `tools/smbwatch.sh` copian el crontab de root en `/etc/bak/crontab/root.bak`. Es una sola copia, sobrescrita en cada ejecución, compartida con cualquier otro proyecto que toque el mismo crontab, y nunca se restaura de forma automática. `--uninstall` tampoco la restaura: borra únicamente sus propias entradas, identificadas por la ruta completa del script, y deja intactas las demás tareas de cron. Para deshacer un cambio, restaura la copia a mano con `crontab /etc/bak/crontab/root.bak`.
 
 ## HOW TO USE
 
@@ -331,7 +342,7 @@ The installer will prompt for:
 | Prompt | Description |
 |--------|-------------|
 | Shared folder name | Name for the shared folder (created under `/home/$local_user/`) |
-| Samba server network | IP/network in CIDR format (e.g. `192.168.1.0/24`) |
+| Samba server network | IP/network in CIDR format (e.g. `192.168.0.0/24`) |
 | Network interface | Selected from available interfaces listed |
 | Samba username | Samba account to create |
 | Overwrite smb.conf | Only asked if `/etc/samba/smb.conf` already exists |
@@ -499,11 +510,11 @@ sudo pdbedit -L
   </tr>
 </table>
 
-| Channel | System user | Recycle path |
-|---------|-------------|--------------|
-| SMB (LAN clients) | `smbguest` (set by `force user` in `smb.conf`) | `.recycle/smbguest/` |
-| Web interface (Apache) | `www-data` | `.recycle/www-data/` |
-| Size-limit watchdog (`tools/smbwatch.sh`) | `${LOCAL_USER:-root}:sambashare` | `.recycle/smbwatch/` |
+| Path | Written by | Purpose |
+|---|---|---|
+| `.recycle/smbguest/` | SMB clients on the LAN, through `vfs_recycle` (`smbguest`, set by `force user` in `smb.conf`) | Holds files deleted by users from Windows or Linux over the network / Guarda los archivos borrados por los usuarios desde Windows o Linux por la red |
+| `.recycle/www-data/` | The web interface running under Apache (`www-data`) | Holds files deleted from the browser panel / Guarda los archivos borrados desde el panel web |
+| `.recycle/smbwatch/` | `tools/smbwatch.sh` (`${LOCAL_USER:-root}:sambashare`) | Holds files moved out automatically when a monitored folder exceeds its size limit / Guarda los archivos retirados automáticamente cuando una carpeta monitoreada supera su límite de tamaño |
 
 <table>
   <tr>
@@ -529,6 +540,33 @@ sudo pdbedit -L
     └── 20260711/
         └── bigfile.iso
 ```
+
+> **Note:** the recycle bin lives inside the shared folder itself so that recycling a file is a `mv` within the same filesystem — instantaneous and without copying data, which would not be the case if the bin were on another disk. For the details of each channel, see the *Web Interface*, *smbwatch* and *Configuration reference* sections.
+
+> **Nota:** la papelera vive dentro de la propia carpeta compartida para que reciclar un archivo sea un `mv` dentro del mismo sistema de archivos — instantáneo y sin copiar datos, cosa que no ocurriría si la papelera estuviera en otro disco. Para el detalle de cada canal, consulta las secciones *Web Interface*, *smbwatch* y *Configuration reference*.
+
+#### Recycle timestamp
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      The weekly cleanup decides what to delete by reading each item's modification date, so that date must reflect the moment the item was recycled — not the day the document was last edited. Otherwise an old file recycled today would already count as expired and disappear on the next run. Each channel stamps the item with the current date on its way into the bin:
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      La limpieza semanal decide qué borrar leyendo la fecha de modificación de cada elemento, así que esa fecha debe reflejar el momento en que se recicló, no el día en que se editó el documento por última vez. De lo contrario, un archivo antiguo reciclado hoy ya contaría como vencido y desaparecería en la siguiente pasada. Cada canal sella el elemento con la fecha actual al entrar en la papelera:
+    </td>
+  </tr>
+</table>
+
+| Channel | Stamped by |
+|---------|------------|
+| SMB (LAN clients) | `recycle:touch = yes` in `smb.conf` |
+| Web interface (Apache) | `recycle_touch()` in `web/shared.php`, applied recursively so a recycled folder carries its contents |
+| Size-limit watchdog | `touch` after the move, in `tools/smbwatch.sh` |
+
+> A restored item therefore carries the date it was recycled, not its original one.
+>
+> Por eso un elemento restaurado conserva la fecha en que fue reciclado, no la original.
 
 #### File versioning
 
@@ -608,8 +646,12 @@ recycle:noversions = *.dat,*.ini
 </table>
 
 ```bash
-@weekly find "/home/$local_user/shared/.recycle/" -depth -mindepth 1 -mtime +7 -delete >/dev/null 2>&1
+@weekly find "/home/$local_user/shared/.recycle/" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1
 ```
+
+> The job runs once a week, so an item stays in the bin between 7 and 13 days depending on the day it was recycled.
+>
+> La tarea corre una vez por semana, así que un elemento permanece en la papelera entre 7 y 13 días según el día en que se recicló.
 
 <table>
   <tr>
@@ -710,28 +752,32 @@ sudo crontab -e
 <table>
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbload.sh</code> is a service watchdog that ensures <code>smbd</code> and <code>winbind</code> are running at boot. It is automatically registered in cron <code>@reboot</code> during installation and runs from <code>/var/www/smbstack/tools/</code>.
+      <code>smbload.sh</code> is a service watchdog that ensures <code>smbd</code> and <code>winbind</code> are running. Neither unit ships a <code>Restart=</code> policy, so nothing else brings them back once they stop. It also restarts <code>smbwatch.sh</code> if it is no longer running. It is automatically registered in cron every 5 minutes during installation and runs from <code>/var/www/smbstack/tools/</code>.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbload.sh</code> es un watchdog de servicios que garantiza que <code>smbd</code> y <code>winbind</code> estén en ejecución al arrancar. Se registra automáticamente en cron <code>@reboot</code> durante la instalación y corre desde <code>/var/www/smbstack/tools/</code>.
+      <code>smbload.sh</code> es un watchdog de servicios que garantiza que <code>smbd</code> y <code>winbind</code> estén en ejecución. Ninguna de las dos unidades trae política <code>Restart=</code>, así que nadie más las levanta cuando se detienen. También reinicia <code>smbwatch.sh</code> si ha dejado de ejecutarse. Se registra automáticamente en cron cada 5 minutos durante la instalación y corre desde <code>/var/www/smbstack/tools/</code>.
     </td>
   </tr>
 </table>
 
 ```bash
 # sudo crontab -l
-@reboot /var/www/smbstack/tools/smbload.sh
+*/5 * * * * /var/www/smbstack/tools/smbload.sh
 ```
+
+> **Note:** the smbwatch check is inert until `WATCH_LIMIT_GB` and `WATCH_EXCLUDE` exist and are valid in `smbstack.env`, which happens the first time `smbwatch.sh start` is run from a terminal and its questions are answered. Until then `smbload.sh` logs a `-- skip` line and does not launch it.
+
+> **Nota:** la vigilancia de smbwatch permanece inactiva hasta que `WATCH_LIMIT_GB` y `WATCH_EXCLUDE` existan y sean válidas en `smbstack.env`, lo que ocurre la primera vez que se ejecuta `smbwatch.sh start` desde un terminal y se responden sus preguntas. Hasta entonces `smbload.sh` registra una línea `-- skip` y no lo lanza.
 
 ### smbwatch
 
 <table>
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbwatch.sh</code> monitors first-level subdirectories of the shared folder in real time using <code>inotifywait</code>. When a subdirectory exceeds the configured size limit, the triggering file is automatically moved to <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — its own channel, separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code> (see <a href="#recycle-bin-channels">Recycle bin channels</a>). It is self-managed and independent of the installer — it reads its configuration from <code>smbstack.env</code> and prompts for any missing values.
+      <code>smbwatch.sh</code> monitors first-level subdirectories of the shared folder in real time using <code>inotifywait</code>. When a subdirectory exceeds the configured size limit, the triggering file is automatically moved to <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — its own channel, separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code> (see <a href="#recycle-bin-channels">Recycle bin channels</a>). It is self-managed and independent of the installer — it reads its configuration from <code>smbstack.env</code> and prompts for any missing values, which requires a terminal: if a value is missing and there is none (for example under cron), it aborts instead of waiting for an answer.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbwatch.sh</code> monitorea en tiempo real las subcarpetas de primer nivel de la carpeta compartida usando <code>inotifywait</code>. Cuando una subcarpeta supera el límite de tamaño configurado, el archivo que disparó el evento se mueve automáticamente a <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — su propio canal, separado de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code> (ver <a href="#recycle-bin-channels">Recycle bin channels</a>). Es autogestionado e independiente del instalador — lee su configuración desde <code>smbstack.env</code> y solicita los valores faltantes.
+      <code>smbwatch.sh</code> monitorea en tiempo real las subcarpetas de primer nivel de la carpeta compartida usando <code>inotifywait</code>. Cuando una subcarpeta supera el límite de tamaño configurado, el archivo que disparó el evento se mueve automáticamente a <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — su propio canal, separado de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code> (ver <a href="#recycle-bin-channels">Recycle bin channels</a>). Es autogestionado e independiente del instalador — lee su configuración desde <code>smbstack.env</code> y solicita los valores faltantes, lo que exige un terminal: si falta un valor y no lo hay (por ejemplo bajo cron), aborta en lugar de quedarse esperando respuesta.
     </td>
   </tr>
 </table>
@@ -806,7 +852,7 @@ sudo tee -a /etc/logrotate.d/samba > /dev/null <<'EOF'
 EOF
 ```
 
-## ⚠️ WARNING: Network Access
+## ⚠️ WARNING: NETWORK ACCESS
 
 ---
 
@@ -833,6 +879,13 @@ EOF
 
 **Optional tunnel:**
 - [Cloudflare Tunnel with Zero Trust Recommended](https://raw.githubusercontent.com/maravento/vault/master/scripts/bash/cftunnel.sh)
+
+## WORKTOOLS
+
+---
+
+- [Archify](https://github.com/tt-a1i/archify)
+- [Watchdog Scripts (smbload, smbwatch)](https://github.com/maravento/smbstack/tree/master/tools)
 
 ## NOTICE
 

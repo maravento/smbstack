@@ -97,6 +97,22 @@ function write_audit($action, $file_path) {
     }
 }
 
+// Stamps a recycled item with the current time, the same way Samba's
+// "recycle:touch = yes" does, so the weekly cleanup counts days spent in
+// the bin instead of the item's own age. Recursive: a recycled folder
+// carries its contents with it.
+function recycle_touch($path) {
+    @touch($path);
+    if (is_dir($path)) {
+        $items = @scandir($path);
+        if ($items === false) return;
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') continue;
+            recycle_touch($path . DIRECTORY_SEPARATOR . $item);
+        }
+    }
+}
+
 // Blocks known script/executable extensions by checking the real extension
 // of the final (already-trimmed) filename, rather than a regex lookahead
 // that can be bypassed with a trailing space before the extension.
@@ -305,6 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
             } else {
                 @chgrp($dest, 'www-data');
                 @chmod($dest, is_dir($dest) ? 0775 : 0664);
+                recycle_touch($dest);
                 write_audit('unlinkat', $item_full);
                 $recycle_msg = 'recycled';
             }
