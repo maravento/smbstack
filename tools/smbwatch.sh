@@ -34,56 +34,67 @@
 
 set -uo pipefail
 
-# PATH for cron
+# ------------------------------------------------------------------------------
+# REQUIREMENTS
+# ------------------------------------------------------------------------------
+
+# path for cron
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # logging
 log_file="/var/log/smbwatch.log"
 log() {
-    local msg="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$log_file" 2>/dev/null || true
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" 2>/dev/null || true
 }
 
-## root check
+# root check
 if [ "$(id -u)" != "0" ]; then
     log "ERROR: This script must be run as root -- abort"
     exit 1
 fi
 
-### PATHS
-SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
-SCRIPT_PATH="$SCRIPT_DIR/$(basename "$0")"
-SMBSTACK_ENV="/var/www/smbstack/smbstack.env"
-RUN_DIR="/run"
-mkdir -p "$RUN_DIR"
-PIDFILE="$RUN_DIR/smbstack-smbwatch.pid"
-STATEFILE="$RUN_DIR/smbstack-smbwatch.state"
+# dependencies
+for dep_pkg in inotify-tools procps coreutils findutils cron util-linux; do
+    if ! dpkg -s "$dep_pkg" &>/dev/null; then
+        log "ERROR: dependency '$dep_pkg' is not installed -- abort"
+        exit 1
+    fi
+done
 
-# VALIDATION -- integer only; use directly with =~
-_UH_UINT='^(0|[1-9][0-9]*)$'
+# ------------------------------------------------------------------------------
+# VARIABLES
+# ------------------------------------------------------------------------------
+
+script_dir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+script_path="$script_dir/$(basename "$0")"
+smbstack_env="/var/www/smbstack/smbstack.env"
+run_dir="/run"
+mkdir -p "$run_dir"
+pid_file="$run_dir/smbstack-smbwatch.pid"
+state_file="$run_dir/smbstack-smbwatch.state"
+
+# validation -- integer only; use directly with =~
+UH_UINT='^(0|[1-9][0-9]*)$'
+
+# ------------------------------------------------------------------------------
+# FUNCTIONS
+# ------------------------------------------------------------------------------
 
 # $! only captures the PID of the last stage of the "inotifywait | while read"
 # pipeline (the subshell), not inotifywait itself. Guard against that PID
 # being alive on its own (or reused by an unrelated process) by also
 # confirming a real inotifywait process exists in the same process group.
 is_smbwatch_running() {
-    local pid="$1" pgid
-    kill -0 "$pid" 2>/dev/null || return 1
-    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
-    [ -n "$pgid" ] && pgrep -g "$pgid" -x inotifywait >/dev/null 2>&1
+    local watch_pid="$1" process_group
+    kill -0 "$watch_pid" 2>/dev/null || return 1
+    process_group=$(ps -o pgid= -p "$watch_pid" 2>/dev/null | tr -d ' ')
+    [ -n "$process_group" ] && pgrep -g "$process_group" -x inotifywait >/dev/null 2>&1
 }
 
-### DEPENDENCIES
-for dep in inotify-tools procps coreutils findutils cron util-linux; do
-    if ! dpkg -s "$dep" &>/dev/null; then
-        log "ERROR: dependency '$dep' is not installed -- abort"
-        exit 1
-    fi
-done
-
-### LOAD ENV
-if [ ! -f "$SMBSTACK_ENV" ]; then
-    log "ERROR: smbstack is not installed. Run smbinstall.sh --install first."
+# LOAD ENV
+# Abort if smbstack is not installed, then read its .env file
+if [ ! -f "$smbstack_env" ]; then
+    log "ERROR: smbstack is not installed -- abort"
     exit 1
 fi
 
@@ -95,85 +106,87 @@ load_env() {
     # Anything outside known_env_keys is genuinely unexpected and gets a WARNING.
     local known_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
     local needed_env_keys=" SHARED_PATH LOCAL_USER WATCH_LIMIT_GB WATCH_EXCLUDE "
-    while IFS= read -r line; do
-        if [[ "$line" =~ ^[A-Z_]+=.* ]]; then
-            key="${line%%=*}"
-            val="${line#*=}"
-            val="${val//\"}"
+    while IFS= read -r env_line; do
+        if [[ "$env_line" =~ ^[A-Z_]+=.* ]]; then
+            env_key="${env_line%%=*}"
+            env_value="${env_line#*=}"
+            env_value="${env_value//\"}"
             case "$needed_env_keys" in
-                *" $key "*) export "$key=$val" ;;
+                *" $env_key "*) export "$env_key=$env_value" ;;
                 *)
                     case "$known_env_keys" in
-                        *" $key "*) ;;
-                        *) log "WARNING: ignoring unknown key in $SMBSTACK_ENV: $key" ;;
+                        *" $env_key "*) ;;
+                        *) log "WARNING: ignoring unknown key in $smbstack_env: $env_key" ;;
                     esac
                     ;;
             esac
         fi
-    done < "$SMBSTACK_ENV"
+    done < "$smbstack_env"
 }
 load_env
 
 set_env_var() {
-    local key="$1" val="$2"
+    local env_key="$1" env_value="$2"
     local esc_val
-    val=$(printf '%s' "$val" | tr -d '\r\n')
-    esc_val=$(printf '%s' "$val" | sed -e 's/[\&|]/\\&/g')
-    if grep -q "^${key}=" "$SMBSTACK_ENV"; then
-        sed -i "s|^${key}=.*|${key}=\"${esc_val}\"|" "$SMBSTACK_ENV"
+    env_value=$(printf '%s' "$env_value" | tr -d '\r\n')
+    esc_val=$(printf '%s' "$env_value" | sed -e 's/[\&|]/\\&/g')
+    if grep -q "^${env_key}=" "$smbstack_env"; then
+        sed -i "s|^${env_key}=.*|${env_key}=\"${esc_val}\"|" "$smbstack_env"
     else
-        echo "${key}=\"${val}\"" >> "$SMBSTACK_ENV"
+        echo "${env_key}=\"${env_value}\"" >> "$smbstack_env"
     fi
 }
 
-### HANDLE NEW FILE
+# HANDLE NEW FILE
+# Move a newly created file to the recycle folder when it exceeds the limit
 handle_new_file() {
-    local NEWFILE="$1"
+    local new_file="$1"
     sleep 1
 
-    [ ! -e "$NEWFILE" ] && return
+    [ ! -e "$new_file" ] && return
 
-    local REL="${NEWFILE#"$SHARED_PATH"/}"
-    local TOP_DIR="$SHARED_PATH/${REL%%/*}"
+    local rel_path="${new_file#"$SHARED_PATH"/}"
+    local watched_dir="$SHARED_PATH/${rel_path%%/*}"
 
-    local SIZE
-    SIZE=$(du -sb "$TOP_DIR" 2>/dev/null | awk '{print $1}')
-    [[ "$SIZE" =~ $_UH_UINT ]] || SIZE=0
+    local dir_size
+    dir_size=$(du -sb "$watched_dir" 2>/dev/null | awk '{print $1}')
+    [[ "$dir_size" =~ $UH_UINT ]] || dir_size=0
 
-    if [ "$SIZE" -ge "$LIMIT" ]; then
-        mkdir -p "$RECYCLE_DIR"
-        chown "${LOCAL_USER:-root}":sambashare "$RECYCLE_DIR" 2>/dev/null || true
-        chmod 775 "$RECYCLE_DIR"
-        local TS
-        TS=$(date +%Y%m%d)
-        local DEST="$RECYCLE_DIR/$TS"
-        mkdir -p "$DEST"
-        chown "${LOCAL_USER:-root}":sambashare "$DEST"
-        chmod 775 "$DEST"
+    if [ "$dir_size" -ge "$size_limit" ]; then
+        mkdir -p "$recycle_dir"
+        chown "${LOCAL_USER:-root}":sambashare "$recycle_dir" 2>/dev/null || true
+        chmod 775 "$recycle_dir"
+        local recycle_date
+        recycle_date=$(date +%Y%m%d)
+        local dest_path="$recycle_dir/$recycle_date"
+        mkdir -p "$dest_path"
+        chown "${LOCAL_USER:-root}":sambashare "$dest_path"
+        chmod 775 "$dest_path"
 
-        if [ -f "$NEWFILE" ]; then
-            mv -f "$NEWFILE" "$DEST/$(basename "$NEWFILE")"
-            log "Moved file to recycle: $NEWFILE -> $DEST"
-        elif [ -d "$NEWFILE" ] && [ -z "$(ls -A "$NEWFILE")" ]; then
-            mv -f "$NEWFILE" "$DEST/$(basename "$NEWFILE")"
-            log "Moved empty dir to recycle: $NEWFILE -> $DEST"
+        if [ -f "$new_file" ]; then
+            mv -f "$new_file" "$dest_path/$(basename "$new_file")"
+            log "Moved file to recycle: $new_file -> $dest_path"
+        elif [ -d "$new_file" ] && [ -z "$(ls -A "$new_file")" ]; then
+            mv -f "$new_file" "$dest_path/$(basename "$new_file")"
+            log "Moved empty dir to recycle: $new_file -> $dest_path"
         fi
     fi
 }
 
-### START
+# START
+# Launch the inotifywait watcher in background and write its pid file
 start() {
     # prevent overlapping runs
-    SCRIPT_LOCK="/var/lock/$(basename "$0" .sh).lock"
-    (umask 077; : >> "$SCRIPT_LOCK")
-    exec 200>"$SCRIPT_LOCK"
+    script_lock="/var/lock/$(basename "$0" .sh).lock"
+    (umask 077; : >> "$script_lock")
+    exec 200>"$script_lock"
     if ! flock -n 200; then
         log "ERROR: script $(basename "$0") is already running -- abort"
         exit 1
     fi
 
-    if [ -f "$PIDFILE" ] && is_smbwatch_running "$(cat "$PIDFILE")"; then
-        log "SMBwatch is already running with PID $(cat "$PIDFILE")"
+    if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
+        log "SMBwatch is already running with PID $(cat "$pid_file")"
         exit 1
     fi
 
@@ -183,12 +196,12 @@ start() {
         chown root:root "$log_file"
     fi
 
-    ### CHECK AND SET WATCH_LIMIT_GB
+    # CHECK AND SET WATCH_LIMIT_GB
     if [ -z "${WATCH_LIMIT_GB:-}" ]; then
         while true; do
             read -p "Enter watch limit per folder in GB [10]: " input_limit
             input_limit="${input_limit:-10}"
-            if [[ "$input_limit" =~ $_UH_UINT ]] && [ "$input_limit" -gt 0 ] && [ "$input_limit" -le 10000 ]; then
+            if [[ "$input_limit" =~ $UH_UINT ]] && [ "$input_limit" -gt 0 ] && [ "$input_limit" -le 10000 ]; then
                 WATCH_LIMIT_GB="$input_limit"
                 set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
                 log "Watch limit set to ${WATCH_LIMIT_GB} GB"
@@ -199,7 +212,7 @@ start() {
         done
     fi
 
-    ### CHECK AND SET WATCH_EXCLUDE
+    # CHECK AND SET WATCH_EXCLUDE
     if [ -z "${WATCH_EXCLUDE:-}" ]; then
         read -p "Enter folders to exclude from watch limit (comma-separated, or leave empty): " input_exclude
         if [ -n "$input_exclude" ]; then
@@ -214,92 +227,94 @@ start() {
     fi
     [ "$WATCH_EXCLUDE" = "NONE" ] && WATCH_EXCLUDE=""
 
-    LIMIT=$((WATCH_LIMIT_GB * 1024 * 1024 * 1024))
+    size_limit=$((WATCH_LIMIT_GB * 1024 * 1024 * 1024))
 
-    ### BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
+    # BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
     if [ -z "${SHARED_PATH:-}" ] || [ ! -d "$SHARED_PATH" ]; then
-        log "ERROR: SHARED_PATH is not set or does not exist. Check $SMBSTACK_ENV"
+        log "ERROR: SHARED_PATH is not set or does not exist. Check $smbstack_env"
         exit 1
     fi
 
-    RECYCLE_DIR="$SHARED_PATH/.recycle/smbwatch"
-    WATCH_DIRS=()
-    IFS=',' read -ra EXCLUDE_LIST <<< "${WATCH_EXCLUDE:-}"
-    while IFS= read -r -d '' dir; do
-        dirname="$(basename "$dir")"
-        [[ "$dirname" == .* ]] && continue
-        excluded=0
-        for ex in "${EXCLUDE_LIST[@]}"; do
-            ex="${ex#"${ex%%[![:space:]]*}"}" ; ex="${ex%"${ex##*[![:space:]]}"}"
-            [ "$dirname" = "$ex" ] && excluded=1 && break
+    recycle_dir="$SHARED_PATH/.recycle/smbwatch"
+    watch_dirs=()
+    IFS=',' read -ra exclude_list <<< "${WATCH_EXCLUDE:-}"
+    while IFS= read -r -d '' shared_subdir; do
+        dir_name="$(basename "$shared_subdir")"
+        [[ "$dir_name" == .* ]] && continue
+        is_excluded=0
+        for excluded_name in "${exclude_list[@]}"; do
+            excluded_name="${excluded_name#"${excluded_name%%[![:space:]]*}"}" ; excluded_name="${excluded_name%"${excluded_name##*[![:space:]]}"}"
+            [ "$dir_name" = "$excluded_name" ] && is_excluded=1 && break
         done
-        [ "$excluded" -eq 1 ] && continue
-        WATCH_DIRS+=("$dir")
+        [ "$is_excluded" -eq 1 ] && continue
+        watch_dirs+=("$shared_subdir")
     done < <(find "$SHARED_PATH" -mindepth 1 -maxdepth 1 -type d -print0)
 
-    if [ "${#WATCH_DIRS[@]}" -eq 0 ]; then
+    if [ "${#watch_dirs[@]}" -eq 0 ]; then
         log "ERROR: No subdirectories found in $SHARED_PATH"
         exit 1
     fi
 
-    printf '%s\n' "${WATCH_DIRS[@]}" > "$STATEFILE"
+    printf '%s\n' "${watch_dirs[@]}" > "$state_file"
 
     log "Starting smbwatch..."
     log "  Shared path : $SHARED_PATH"
     log "  Watch limit : ${WATCH_LIMIT_GB} GB per folder"
     log "  Watching    :"
-    printf '    %s\n' "${WATCH_DIRS[@]}" | tee -a "$log_file"
+    printf '    %s\n' "${watch_dirs[@]}" | tee -a "$log_file"
     log "  Excluded    : ${WATCH_EXCLUDE:-none}"
-    log "  Recycle bin : $RECYCLE_DIR"
+    log "  Recycle bin : $recycle_dir"
     log "  Log         : $log_file"
 
-    inotifywait -m -r -e create --format '%w%f' "${WATCH_DIRS[@]}" 2>>"$log_file" | while read -r NEWFILE; do
-        handle_new_file "$NEWFILE"
+    inotifywait -m -r -e create --format '%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while read -r new_file; do
+        handle_new_file "$new_file"
     done &
 
-    echo $! > "$PIDFILE"
-    log "SMBwatch started with PID $(cat "$PIDFILE")"
+    echo $! > "$pid_file"
+    log "SMBwatch started with PID $(cat "$pid_file")"
 
     # add @reboot cron entry if not already present
     if ! crontab -l 2>/dev/null | grep -q "smbwatch.sh start"; then
-        crontab -l 2>/dev/null > "$SCRIPT_DIR/crontab-$(date +%Y%m%d%H%M%S).bak" || true
-        (crontab -l 2>/dev/null; echo "@reboot $SCRIPT_PATH start") | crontab -
+        crontab -l 2>/dev/null > "$script_dir/crontab-$(date +%Y%m%d%H%M%S).bak" || true
+        (crontab -l 2>/dev/null; echo "@reboot $script_path start") | crontab -
         log "Added to cron @reboot"
     fi
 }
 
-### STOP
+# STOP
+# Kill the watcher process group and remove its pid file
 stop() {
     log "Stopping smbwatch..."
-    if [ -f "$PIDFILE" ]; then
-        local PID PGID
-        PID=$(cat "$PIDFILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            PGID=$(ps -o pgid= -p "$PID" 2>/dev/null | tr -d ' ')
-            if [ -n "$PGID" ]; then
-                kill -- "-$PGID" 2>/dev/null
+    if [ -f "$pid_file" ]; then
+        local watch_pid process_group
+        watch_pid=$(cat "$pid_file")
+        if kill -0 "$watch_pid" 2>/dev/null; then
+            process_group=$(ps -o pgid= -p "$watch_pid" 2>/dev/null | tr -d ' ')
+            if [ -n "$process_group" ]; then
+                kill -- "-$process_group" 2>/dev/null
             else
-                kill "$PID" 2>/dev/null
+                kill "$watch_pid" 2>/dev/null
             fi
-            log "SMBwatch stopped (PID $PID)"
+            log "SMBwatch stopped (PID $watch_pid)"
         else
             log "SMBwatch was not running (stale PID file removed)"
         fi
-        rm -f "$PIDFILE" "$STATEFILE"
+        rm -f "$pid_file" "$state_file"
     else
         log "SMBwatch is not running"
     fi
 }
 
-### STATUS
+# STATUS
+# Report whether the watcher is running
 status() {
     log "SMBwatch status..."
-    if [ -f "$PIDFILE" ] && is_smbwatch_running "$(cat "$PIDFILE")"; then
-        log "  SMBwatch is RUNNING (PID $(cat "$PIDFILE"))"
-        log "  Watch limit : ${WATCH_LIMIT_GB} GB per folder"
-        if [ -f "$STATEFILE" ]; then
+    if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
+        log "  SMBwatch is RUNNING (PID $(cat "$pid_file"))"
+        log "  Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
+        if [ -f "$state_file" ]; then
             log "  Watching    :"
-            sed 's/^/    /' "$STATEFILE" | tee -a "$log_file"
+            sed 's/^/    /' "$state_file" | tee -a "$log_file"
         else
             log "  Watching    : (unknown, state file missing)"
         fi
@@ -308,7 +323,10 @@ status() {
     fi
 }
 
-### MAIN
+# ------------------------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------------------------
+
 case "${1:-}" in
     start)  start ;;
     stop)   stop ;;

@@ -6,49 +6,54 @@
 # smbload - Service Watchdog
 # https://github.com/maravento/smbstack
 #
-# NOTE on logging:
-# - Writes to /var/log/smbload.log (append-only, no rotation configured by
-#   this script). Set up logrotate for this file if disk usage matters.
-# - To clear it manually: truncate -s 0 /var/log/smbload.log
+# log: /var/log/smbload.log (rewritten on each run)
 #
 ################################################################################
 
 set -uo pipefail
 
-# PATH for cron
+# ------------------------------------------------------------------------------
+# REQUIREMENTS
+# ------------------------------------------------------------------------------
+
+# path for cron
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # logging
 log_file="/var/log/smbload.log"
+{ > "$log_file"; } 2>/dev/null || true
 log() {
-    local msg="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$log_file" 2>/dev/null || true
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" 2>/dev/null || true
 }
 
-## root check
+# root check
 if [ "$(id -u)" != "0" ]; then
     log "ERROR: This script must be run as root -- abort"
     exit 1
 fi
 
 # prevent overlapping runs
-SCRIPT_LOCK="/var/lock/$(basename "$0" .sh).lock"
-(umask 077; : >> "$SCRIPT_LOCK")
-exec 200>"$SCRIPT_LOCK"
+script_lock="/var/lock/$(basename "$0" .sh).lock"
+(umask 077; : >> "$script_lock")
+exec 200>"$script_lock"
 if ! flock -n 200; then
     log "ERROR: script $(basename "$0") is already running -- abort"
     exit 1
 fi
 
-# DEPENDENCIES
-for dep in procps samba winbind util-linux; do
-    if ! dpkg -s "$dep" &>/dev/null; then
-        log "ERROR: dependency '$dep' is not installed -- abort"
+# dependencies
+for dep_pkg in procps samba winbind util-linux; do
+    if ! dpkg -s "$dep_pkg" &>/dev/null; then
+        log "ERROR: dependency '$dep_pkg' is not installed -- abort"
         exit 1
     fi
 done
 
-# Start
+# ------------------------------------------------------------------------------
+# SERVICES
+# ------------------------------------------------------------------------------
+
+# start
 log "smbload start..."
 
 # Samba Service (smbd)
@@ -75,5 +80,9 @@ else
     fi
 fi
 
-# End
+# ------------------------------------------------------------------------------
+# END
+# ------------------------------------------------------------------------------
+
+# end
 log "smbload done at: $(date)"
