@@ -47,7 +47,7 @@ if ! flock -n 200; then
 fi
 
 # dependencies
-for dep_pkg in procps samba winbind util-linux coreutils sed; do
+for dep_pkg in procps samba winbind util-linux coreutils sed systemd; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
         log "ERROR: dependency '$dep_pkg' is not installed -- abort"
         exit 1
@@ -63,25 +63,25 @@ log "smbload start..."
 
 # Samba Service (smbd)
 if pgrep -x smbd > /dev/null; then
-    log "smbd: ONLINE"
+    log "INFO: smbd ONLINE"
 else
     systemctl stop smbd.service &>/dev/null
     if systemctl start smbd.service; then
-        log "smbd start"
+        log "FIX: smbd restarted"
     else
-        log "smbd start FAILED"
+        log "WARNING: smbd restart FAILED -- alert"
     fi
 fi
 
 # Samba Service (winbind)
 if pgrep -x winbindd > /dev/null; then
-    log "winbind: ONLINE"
+    log "INFO: winbind ONLINE"
 else
     systemctl stop winbind.service &>/dev/null
     if systemctl start winbind.service; then
-        log "winbind start"
+        log "FIX: winbind restarted"
     else
-        log "winbind start FAILED"
+        log "WARNING: winbind restart FAILED -- alert"
     fi
 fi
 
@@ -112,18 +112,18 @@ if [ -f "$smbstack_env" ]; then
 fi
 
 if [ -z "$watch_limit_gb" ] || [ -z "$watch_exclude" ]; then
-    log "WARNING: WATCH_LIMIT_GB/WATCH_EXCLUDE not set in $smbstack_env -- skip"
+    log "WARNING: WATCH_LIMIT_GB/WATCH_EXCLUDE not set -- skip"
 elif ! [[ "$watch_limit_gb" =~ $UH_UINT ]] || [ "$watch_limit_gb" -lt 1 ] || [ "$watch_limit_gb" -gt 10000 ]; then
-    log "WARNING: invalid WATCH_LIMIT_GB in $smbstack_env -- skip"
+    log "WARNING: invalid WATCH_LIMIT_GB in $(basename "$smbstack_env") -- skip"
 elif [ ! -x "$script_dir/smbwatch.sh" ]; then
-    log "WARNING: $script_dir/smbwatch.sh not found or not executable -- skip"
+    log "WARNING: smbwatch.sh not found or not executable -- skip"
 elif [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
-    log "smbwatch: ONLINE"
+    log "INFO: smbwatch ONLINE"
 else
     if "$script_dir/smbwatch.sh" start &>/dev/null; then
-        log "smbwatch start"
+        log "FIX: smbwatch restarted"
     else
-        log "smbwatch start FAILED"
+        log "WARNING: smbwatch restart FAILED -- alert"
     fi
 fi
 
@@ -131,5 +131,4 @@ fi
 # END
 # ------------------------------------------------------------------------------
 
-# end
 log "smbload done at: $(date)"

@@ -529,7 +529,10 @@ EOF
         apply_smb_conf_interfaces
     fi
 
-    # veto list (static, optional -- see the commented "include" line in smb.conf)
+    # limit the web panel to loopback and the chosen LAN
+    sed -i -E "s#^([[:space:]]*)Require ip .*#\1Require ip 127.0.0.1 $net_answer#" /etc/apache2/sites-available/smbweb.conf
+
+    # veto list required by the include line in smb.conf
     mkdir -p /etc/samba/acl
     cp -f "$acl_dir/commonveto.txt" /etc/samba/acl/commonveto.txt
     chmod 644 /etc/samba/acl/commonveto.txt
@@ -744,7 +747,6 @@ do_update() {
                 continue
                 ;;
         esac
-        [ -f "$dest_path" ] || continue
         cp -f "$source_file" "$dest_path"
         escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$dest_path"
@@ -886,7 +888,11 @@ do_status() {
 
     echo ""
     echo "=== smb.conf ==="
-    testparm -s 2>/dev/null | head -20 | sed 's/^/ /' || echo " testparm not available"
+    if command -v testparm >/dev/null 2>&1; then
+        testparm -s 2>/dev/null | head -20 | sed 's/^/ /'
+    else
+        echo " testparm not available"
+    fi
 }
 
 # ------------------------------------------------------------------------------

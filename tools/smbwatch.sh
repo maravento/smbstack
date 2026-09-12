@@ -54,7 +54,7 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 # dependencies
-for dep_pkg in inotify-tools procps coreutils findutils cron util-linux; do
+for dep_pkg in inotify-tools procps coreutils findutils cron util-linux sed grep; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
         log "ERROR: dependency '$dep_pkg' is not installed -- abort"
         exit 1
@@ -183,11 +183,11 @@ handle_new_file() {
         if [ -f "$new_file" ]; then
             mv -f "$new_file" "$dest_path/$(basename "$new_file")"
             touch "$dest_path/$(basename "$new_file")"
-            log "Moved file to recycle: $new_file -> $dest_path"
+            log "INFO: moved to recycle: $(basename "$new_file")"
         elif [ -d "$new_file" ] && [ -z "$(ls -A "$new_file")" ]; then
             mv -f "$new_file" "$dest_path/$(basename "$new_file")"
             touch "$dest_path/$(basename "$new_file")"
-            log "Moved empty dir to recycle: $new_file -> $dest_path"
+            log "INFO: moved empty dir to recycle: $(basename "$new_file")"
         fi
     fi
 }
@@ -205,7 +205,7 @@ start() {
     fi
 
     if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
-        log "SMBwatch is already running with PID $(cat "$pid_file")"
+        log "ERROR: already running with PID $(cat "$pid_file") -- abort"
         exit 1
     fi
 
@@ -217,7 +217,7 @@ start() {
 
     # keys can only be asked for interactively; under cron there is nobody to answer
     if { [ -z "${WATCH_LIMIT_GB:-}" ] || [ -z "${WATCH_EXCLUDE:-}" ]; } && [ ! -t 0 ]; then
-        log "ERROR: WATCH_LIMIT_GB/WATCH_EXCLUDE not set in $smbstack_env and no terminal available -- abort"
+        log "ERROR: WATCH_LIMIT_GB/WATCH_EXCLUDE not set in .env -- abort"
         exit 1
     fi
 
@@ -229,10 +229,10 @@ start() {
             if [[ "$input_limit" =~ $UH_UINT ]] && [ "$input_limit" -gt 0 ] && [ "$input_limit" -le 10000 ]; then
                 WATCH_LIMIT_GB="$input_limit"
                 set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
-                log "Watch limit set to ${WATCH_LIMIT_GB} GB"
+                log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
                 break
             else
-                log "ERROR: Enter a valid number between 1 and 10000"
+                log "INFO: Enter a valid number between 1 and 10000"
             fi
         done
     fi
@@ -243,11 +243,11 @@ start() {
         if [ -n "$input_exclude" ]; then
             WATCH_EXCLUDE="$input_exclude"
             set_env_var "WATCH_EXCLUDE" "$WATCH_EXCLUDE"
-            log "Excluded folders: ${WATCH_EXCLUDE}"
+            log "INFO: excluded folders: ${WATCH_EXCLUDE}"
         else
             WATCH_EXCLUDE="NONE"
             set_env_var "WATCH_EXCLUDE" "NONE"
-            log "No folders excluded"
+            log "INFO: no folders excluded"
         fi
     fi
     [ "$WATCH_EXCLUDE" = "NONE" ] && WATCH_EXCLUDE=""
@@ -256,7 +256,7 @@ start() {
 
     # BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
     if [ -z "${SHARED_PATH:-}" ] || [ ! -d "$SHARED_PATH" ]; then
-        log "ERROR: SHARED_PATH is not set or does not exist. Check $smbstack_env"
+        log "ERROR: SHARED_PATH not set or does not exist -- abort"
         exit 1
     fi
 
@@ -276,7 +276,7 @@ start() {
     done < <(find "$SHARED_PATH" -mindepth 1 -maxdepth 1 -type d -print0)
 
     if [ "${#watch_dirs[@]}" -eq 0 ]; then
-        log "ERROR: No subdirectories found in $SHARED_PATH"
+        log "ERROR: no subdirectories found in $(basename "$SHARED_PATH") -- abort"
         exit 1
     fi
 
@@ -296,13 +296,13 @@ start() {
     done &
 
     echo $! > "$pid_file"
-    log "SMBwatch started with PID $(cat "$pid_file")"
+    log "INFO: started with PID $(cat "$pid_file")"
 
     # add @reboot cron entry if not already present
     if ! crontab -l 2>/dev/null | grep -q "smbwatch.sh start"; then
         backup_crontab root
         (crontab -l 2>/dev/null; echo "@reboot $script_path start") | crontab -
-        log "Added to cron @reboot"
+        log "INFO: added to cron @reboot"
     fi
 }
 
@@ -320,13 +320,13 @@ stop() {
             else
                 kill "$watch_pid" 2>/dev/null
             fi
-            log "SMBwatch stopped (PID $watch_pid)"
+            log "INFO: stopped (PID $watch_pid)"
         else
-            log "SMBwatch was not running (stale PID file removed)"
+            log "WARNING: stale PID file removed -- alert"
         fi
         rm -f "$pid_file" "$state_file"
     else
-        log "SMBwatch is not running"
+        log "INFO: SMBwatch is not running"
     fi
 }
 

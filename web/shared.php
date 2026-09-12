@@ -228,7 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mkdir'])) {
     }
     if (mkdir($target, 0775)) {
         chmod($target, 02775);
-        chown($target, 'www-data');
+        @chown($target, 'www-data');
         @chgrp($target, 'sambashare');
         write_audit('mkdirat', $target);
         $mkdir_msg = 'success';

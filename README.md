@@ -22,7 +22,7 @@
 
 📐 [Runtime Architecture Diagram](https://htmlpreview.github.io/?https://raw.githubusercontent.com/maravento/smbstack/master/docs/smbstack-architecture.html) — visual walkthrough of the web/audit/recycle pipeline.
 
-## Requirements
+## REQUIREMENTS
 
 ---
 
@@ -61,7 +61,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-## Web Interface
+## WEB INTERFACE
 
 ---
 
@@ -178,7 +178,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-## Scope
+## SCOPE
 
 ---
 
@@ -195,7 +195,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
         <li>Installs a service watchdog (<code>smbload.sh</code>) via cron every 5 minutes</li>
         <li>Installs a shared folder size monitor (<code>smbwatch.sh</code>) — self-managed, independent of the installer</li>
         <li>Saves installation config to <code>/var/www/smbstack/smbstack.env</code> for future updates</li>
-        <li>NetBIOS disabled by default (enable manually if needed, see <a href="#netbios">NetBIOS</a> section)</li>
+        <li>NetBIOS disabled by default (enable manually if needed, see the NetBIOS section)</li>
       </ul>
     </td>
     <td style="width: 50%; vertical-align: top;">
@@ -209,7 +209,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
         <li>Instala un watchdog de servicios (<code>smbload.sh</code>) vía cron cada 5 minutos</li>
         <li>Instala un monitor de espacio de la carpeta compartida (<code>smbwatch.sh</code>) — autogestionado, independiente del instalador</li>
         <li>Guarda la configuración de instalación en <code>/var/www/smbstack/smbstack.env</code> para futuras actualizaciones</li>
-        <li>NetBIOS deshabilitado por defecto (actívalo manualmente si lo necesitas, ver sección <a href="#netbios">NetBIOS</a>)</li>
+        <li>NetBIOS deshabilitado por defecto (actívalo manualmente si lo necesitas, ver la sección NetBIOS)</li>
       </ul>
     </td>
   </tr>
@@ -237,7 +237,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-## Repository Structure
+## REPOSITORY STRUCTURE
 
 ---
 
@@ -248,13 +248,6 @@ smbstack/
 ├── conf/                        # Samba and rsyslog configuration
 │   ├── fullaudit.conf              # rsyslog full audit rule
 │   └── smb.conf                    # Samba main config (placeholders: your_user, compartida)
-├── docs/                        # Documentation licenses
-│   └── LICENSE-CC-BY-NC-ND-4.0.md
-├── img/                            # Screenshots used throughout this README
-│   ├── smbstack-botton.png
-│   ├── smbstack-files.png
-│   ├── smbstack-main.png
-│   └── smbstack-views.png
 ├── tools/                      # Background watchdog scripts
 │   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch)
 │   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
@@ -268,7 +261,6 @@ smbstack/
 │   ├── smbaudit.html               # Audit log viewer UI
 │   ├── smbweb.conf                 # Apache vhost (:3092/?tab=audit and :3092/?tab=shared)
 │   └── sw.js                       # PWA service worker (app-shell cache only)
-├── LICENSE                     # GPL-3.0 (scripts, binaries, infrastructure)
 └── smbinstall.sh               # Installer: install, update, uninstall, status
 ```
 
@@ -774,10 +766,10 @@ sudo crontab -e
 <table>
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbwatch.sh</code> monitors first-level subdirectories of the shared folder in real time using <code>inotifywait</code>. When a subdirectory exceeds the configured size limit, the triggering file is automatically moved to <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — its own channel, separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code> (see <a href="#recycle-bin-channels">Recycle bin channels</a>). It is self-managed and independent of the installer — it reads its configuration from <code>smbstack.env</code> and prompts for any missing values, which requires a terminal: if a value is missing and there is none (for example under cron), it aborts instead of waiting for an answer.
+      <code>smbwatch.sh</code> monitors first-level subdirectories of the shared folder in real time using <code>inotifywait</code>. When a subdirectory exceeds the configured size limit, the triggering file is automatically moved to <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — its own channel, separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code> (see the Recycle bin channels section). It is self-managed and independent of the installer — it reads its configuration from <code>smbstack.env</code> and prompts for any missing values, which requires a terminal: if a value is missing and there is none (for example under cron), it aborts instead of waiting for an answer.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbwatch.sh</code> monitorea en tiempo real las subcarpetas de primer nivel de la carpeta compartida usando <code>inotifywait</code>. Cuando una subcarpeta supera el límite de tamaño configurado, el archivo que disparó el evento se mueve automáticamente a <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — su propio canal, separado de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code> (ver <a href="#recycle-bin-channels">Recycle bin channels</a>). Es autogestionado e independiente del instalador — lee su configuración desde <code>smbstack.env</code> y solicita los valores faltantes, lo que exige un terminal: si falta un valor y no lo hay (por ejemplo bajo cron), aborta en lugar de quedarse esperando respuesta.
+      <code>smbwatch.sh</code> monitorea en tiempo real las subcarpetas de primer nivel de la carpeta compartida usando <code>inotifywait</code>. Cuando una subcarpeta supera el límite de tamaño configurado, el archivo que disparó el evento se mueve automáticamente a <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code> — su propio canal, separado de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code> (ver la sección Recycle bin channels). Es autogestionado e independiente del instalador — lee su configuración desde <code>smbstack.env</code> y solicita los valores faltantes, lo que exige un terminal: si falta un valor y no lo hay (por ejemplo bajo cron), aborta en lugar de quedarse esperando respuesta.
     </td>
   </tr>
 </table>
