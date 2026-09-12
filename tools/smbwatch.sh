@@ -115,32 +115,28 @@ if [ ! -f "$smbstack_env" ]; then
     exit 1
 fi
 
-load_env() {
-    # known_env_keys: all keys smbstack.env can legitimately contain (shared
-    # with smbinstall.sh/the web panel) -- not all of them are needed here,
-    # but they're not suspicious either, so they're skipped silently.
-    # needed_env_keys: the subset this script actually uses -- exported.
-    # Anything outside known_env_keys is genuinely unexpected and gets a WARNING.
-    local known_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
-    local needed_env_keys=" SHARED_PATH LOCAL_USER WATCH_LIMIT_GB WATCH_EXCLUDE "
-    while IFS= read -r env_line; do
-        if [[ "$env_line" =~ ^[A-Z_]+=.* ]]; then
-            env_key="${env_line%%=*}"
-            env_value="${env_line#*=}"
-            env_value="${env_value//\"}"
-            case "$needed_env_keys" in
-                *" $env_key "*) export "$env_key=$env_value" ;;
-                *)
-                    case "$known_env_keys" in
-                        *" $env_key "*) ;;
-                        *) log "WARNING: ignoring unknown key in $smbstack_env: $env_key" ;;
-                    esac
-                    ;;
-            esac
+load_conf() {
+    local conf_file="$1" env_key env_value env_line
+    [[ ! -f "$conf_file" ]] && { log "WARNING: $conf_file not found -- fallback"; return 1; }
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+        [[ "$env_line" =~ ^[[:space:]]*[#] ]] && continue
+        [[ "$env_line" =~ ^[[:space:]]*$ ]] && continue
+        env_key="${env_line%%=*}"
+        env_value="${env_line#*=}"
+        if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
+           || [[ "$env_value" == [[:space:]\"\']* ]] \
+           || [[ "$env_value" == *[[:space:]\"\'] ]]; then
+            log "ERROR: malformed line in $conf_file: '$env_line' -- abort"
+            exit 1
         fi
-    done < "$smbstack_env"
+        case "$env_key" in
+            SHARED_PATH|LOCAL_USER|WATCH_LIMIT_GB|WATCH_EXCLUDE)
+                printf -v "$env_key" '%s' "$env_value"
+                ;;
+        esac
+    done < "$conf_file"
 }
-load_env
+load_conf "$smbstack_env"
 
 set_env_var() {
     local env_key="$1" env_value="$2"
@@ -148,9 +144,9 @@ set_env_var() {
     env_value=$(printf '%s' "$env_value" | tr -d '\r\n')
     esc_val=$(printf '%s' "$env_value" | sed -e 's/[\&|]/\\&/g')
     if grep -q "^${env_key}=" "$smbstack_env"; then
-        sed -i "s|^${env_key}=.*|${env_key}=\"${esc_val}\"|" "$smbstack_env"
+        sed -i "s|^${env_key}=.*|${env_key}=${esc_val}|" "$smbstack_env"
     else
-        echo "${env_key}=\"${env_value}\"" >> "$smbstack_env"
+        echo "${env_key}=${env_value}" >> "$smbstack_env"
     fi
 }
 
@@ -352,9 +348,17 @@ status() {
 # MAIN
 # ------------------------------------------------------------------------------
 
+log "smbwatch start..."
+
 case "${1:-}" in
     start)  start ;;
     stop)   stop ;;
     status) status ;;
     *)      log "Usage: $(basename "$0") {start|stop|status}" ;;
 esac
+
+# ------------------------------------------------------------------------------
+# END
+# ------------------------------------------------------------------------------
+
+log "smbwatch done at: $(date)"

@@ -104,16 +104,37 @@ is_smbwatch_running() {
     [ -n "$process_group" ] && pgrep -g "$process_group" -x inotifywait >/dev/null 2>&1
 }
 
-watch_limit_gb=""
-watch_exclude=""
-if [ -f "$smbstack_env" ]; then
-    watch_limit_gb=$(sed -n 's/^WATCH_LIMIT_GB=//p' "$smbstack_env" | tr -d '"' | tail -n 1)
-    watch_exclude=$(sed -n 's/^WATCH_EXCLUDE=//p' "$smbstack_env" | tr -d '"' | tail -n 1)
-fi
+# LOAD_CONF
+# Read known key=value pairs from a config file, without sourcing it
+load_conf() {
+    local conf_file="$1" env_key env_value env_line
+    [[ ! -f "$conf_file" ]] && { log "WARNING: $conf_file not found -- fallback"; return 1; }
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+        [[ "$env_line" =~ ^[[:space:]]*[#] ]] && continue
+        [[ "$env_line" =~ ^[[:space:]]*$ ]] && continue
+        env_key="${env_line%%=*}"
+        env_value="${env_line#*=}"
+        if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
+           || [[ "$env_value" == [[:space:]\"\']* ]] \
+           || [[ "$env_value" == *[[:space:]\"\'] ]]; then
+            log "ERROR: malformed line in $conf_file: '$env_line' -- abort"
+            exit 1
+        fi
+        case "$env_key" in
+            WATCH_LIMIT_GB|WATCH_EXCLUDE)
+                printf -v "$env_key" '%s' "$env_value"
+                ;;
+        esac
+    done < "$conf_file"
+}
 
-if [ -z "$watch_limit_gb" ] || [ -z "$watch_exclude" ]; then
+WATCH_LIMIT_GB=""
+WATCH_EXCLUDE=""
+load_conf "$smbstack_env"
+
+if [ -z "$WATCH_LIMIT_GB" ] || [ -z "$WATCH_EXCLUDE" ]; then
     log "WARNING: WATCH_LIMIT_GB/WATCH_EXCLUDE not set -- skip"
-elif ! [[ "$watch_limit_gb" =~ $UH_UINT ]] || [ "$watch_limit_gb" -lt 1 ] || [ "$watch_limit_gb" -gt 10000 ]; then
+elif ! [[ "$WATCH_LIMIT_GB" =~ $UH_UINT ]] || [ "$WATCH_LIMIT_GB" -lt 1 ] || [ "$WATCH_LIMIT_GB" -gt 10000 ]; then
     log "WARNING: invalid WATCH_LIMIT_GB in $(basename "$smbstack_env") -- skip"
 elif [ ! -x "$script_dir/smbwatch.sh" ]; then
     log "WARNING: smbwatch.sh not found or not executable -- skip"

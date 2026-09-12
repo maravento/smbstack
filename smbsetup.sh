@@ -62,16 +62,14 @@ detect_local_user() {
 }
 
 if ! local_user=$(detect_local_user); then
-    echo "ERROR: No valid local user found. Create one with sudo access."
-    exit 1
+    abort "no valid local user found, create one with sudo access -- abort"
 fi
 echo "Using local user: $local_user"
 
 # dependencies
 for dep_pkg in apache2 apache2-utils libapache2-mod-php php rsyslog logrotate acl openssl cron iproute2 sudo systemd util-linux zip; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
-        echo "ERROR: dependency '$dep_pkg' is not installed -- abort" >&2
-        exit 1
+        abort "dependency '$dep_pkg' is not installed -- abort"
     fi
 done
 
@@ -80,6 +78,16 @@ done
 # ------------------------------------------------------------------------------
 
 script_dir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+log_file="${script_dir}/smbsetup.log"
+{ > "$log_file"; } 2>/dev/null || true
+log() {
+    local msg="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$log_file" 2>/dev/null || true
+}
+info() { printf ' \e[32m \e[0m %s\n' "$*"; log "INFO: $*"; }
+warn() { printf ' \e[33m!\e[0m %s\n' "$*"; log "WARNING: $*"; }
+err()  { printf ' \e[31m \e[0m %s\n' "$*" >&2; log "ERROR: $*"; }
+abort() { err "$*"; exit 1; }
 conf_dir="$script_dir/conf"
 web_dir="$script_dir/web"
 tools_dir="$script_dir/tools"
@@ -105,6 +113,28 @@ UH_PREFIX='0.0.0.0:0 128.0.0.0:1 192.0.0.0:2 224.0.0.0:3 240.0.0.0:4 248.0.0.0:5
 # FUNCTIONS
 # ------------------------------------------------------------------------------
 
+load_conf() {
+    local conf_file="$1" env_key env_value env_line
+    [[ ! -f "$conf_file" ]] && { log "WARNING: $conf_file not found -- fallback"; return 1; }
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+        [[ "$env_line" =~ ^[[:space:]]*[#] ]] && continue
+        [[ "$env_line" =~ ^[[:space:]]*$ ]] && continue
+        env_key="${env_line%%=*}"
+        env_value="${env_line#*=}"
+        if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
+           || [[ "$env_value" == [[:space:]\"\']* ]] \
+           || [[ "$env_value" == *[[:space:]\"\'] ]]; then
+            log "ERROR: malformed line in $conf_file: '$env_line' -- abort"
+            exit 1
+        fi
+        case "$env_key" in
+            LOCAL_USER|SHARED_NAME|SHARED_PATH|SMB_NET|SMB_IFACE|SMBNAME)
+                printf -v "$env_key" '%s' "$env_value"
+                ;;
+        esac
+    done < "$conf_file"
+}
+
 # crontab backup
 backup_crontab() {
     local cron_user="$1"
@@ -127,10 +157,9 @@ retry_cmd() {
     local attempt=1
     until "$@"; do
         if [ "$attempt" -ge "$max_attempts" ]; then
-            echo "ERROR: command failed after $max_attempts attempts: $*"
-            exit 1
+            abort "command failed after $max_attempts attempts: $* -- abort"
         fi
-        echo "WARNING: command failed (attempt $attempt/$max_attempts), retrying in 10s: $*"
+        warn "command failed (attempt $attempt/$max_attempts), retrying in 10s: $* -- retry"
         attempt=$((attempt + 1))
         sleep 10
     done
@@ -146,9 +175,7 @@ check_repo() {
     done
     if [ "$missing_dir" -eq 1 ]; then
         echo ""
-        echo "ERROR: Repository files not found. Run:"
-        echo ""
-        echo "git clone https://github.com/maravento/smbstack"
+        err "repository files not found, run: git clone https://github.com/maravento/smbstack -- abort"
         echo ""
         exit 1
     fi
@@ -164,7 +191,7 @@ select_shared_folder() {
         read -p "Enter shared folder name [shared]: " folder_answer
         folder_answer="${folder_answer:-shared}"
         if [[ "$folder_answer" =~ [^a-zA-Z0-9_-] ]]; then
-            echo "ERROR: Folder name can only contain letters, numbers, hyphens and underscores"
+            err "folder name can only contain letters, numbers, hyphens and underscores -- retry"
             folder_answer=""
         else
             break
@@ -289,7 +316,7 @@ check_already_installed() {
 
     if [ -f "/etc/samba/smb.conf" ]; then
         existing_share=""
-        [ -f "$smbstack_env" ] && existing_share=$(grep "^SHARED_NAME=" "$smbstack_env" | cut -d= -f2 | tr -d '"')
+        [ -f "$smbstack_env" ] && { load_conf "$smbstack_env"; existing_share="${SHARED_NAME:-}"; }
         if [ -n "$existing_share" ] && grep -q "\[${existing_share}\]" /etc/samba/smb.conf 2>/dev/null; then
             already_installed=1
             skip_reasons+=" - smb.conf already configured: /etc/samba/smb.conf\n"
@@ -298,11 +325,9 @@ check_already_installed() {
 
     if [ "$already_installed" -eq 1 ]; then
         echo ""
-        echo "ERROR: Samba is already installed. Aborting."
+        err "Samba is already installed, run sudo bash smbsetup.sh --update to update -- abort"
         echo ""
         printf "%b" "$skip_reasons"
-        echo ""
-        echo "To update, run: sudo bash smbinstall.sh --update"
         echo ""
         exit 1
     fi
@@ -313,18 +338,15 @@ do_install() {
 
     # dependency check
     if systemctl is-active --quiet nginx; then
-        echo "ERROR: nginx is running. Disable it first: systemctl stop nginx"
-        exit 1
+        abort "nginx is running, disable it first with systemctl stop nginx -- abort"
     fi
 
     if ! systemctl is-active --quiet apache2; then
-        echo "ERROR: apache2 is not running. Start it first: systemctl start apache2"
-        exit 1
+        abort "apache2 is not running, start it first with systemctl start apache2 -- abort"
     fi
 
     if ! systemctl is-active --quiet rsyslog; then
-        echo "ERROR: rsyslog is not running. Start it first: systemctl start rsyslog"
-        exit 1
+        abort "rsyslog is not running, start it first with systemctl start rsyslog -- abort"
     fi
 
     # enable required apache modules
@@ -457,7 +479,7 @@ EOF
             read -p "Enter Samba server IP/network [192.168.0.0/24]: " net_answer
             net_answer="${net_answer:-192.168.0.0/24}"
             if ! [[ "$net_answer" =~ $UH_CIDR ]]; then
-                echo "ERROR: Invalid format. Expected x.x.x.x/xx (e.g. 192.168.0.0/24)"
+                err "invalid format, expected x.x.x.x/xx (e.g. 192.168.0.0/24) -- retry"
                 net_answer=""
             else
                 break
@@ -471,9 +493,9 @@ EOF
             read -p "Enter network interface [$default_iface]: " iface_answer
             iface_answer="${iface_answer:-$default_iface}"
             if [ -z "$iface_answer" ]; then
-                echo "ERROR: Interface cannot be empty"
+                err "interface cannot be empty -- retry"
             elif ! ip link show "$iface_answer" &>/dev/null; then
-                echo "ERROR: Interface $iface_answer not found"
+                err "interface $iface_answer not found -- retry"
                 iface_answer=""
             else
                 break
@@ -510,15 +532,13 @@ EOF
                     break
                     ;;
                 [Nn])
-                    echo "Skipping smb.conf"
-                    echo "WARNING: existing smb.conf kept as-is. The [compartida] share and the"
-                    echo "full_audit/recycle VFS were NOT applied. Add them manually or"
-                    echo "re-run and choose 'y' to deploy the bundled smb.conf."
+                    warn "existing smb.conf kept as-is, the share and the full_audit/recycle VFS were not applied -- skip"
+                    echo "Add them manually, or re-run and choose 'y' to deploy the bundled smb.conf."
                     prompt_smb_net_iface
                     break
                     ;;
                 *)
-                    echo "ERROR: Answer y or n"
+                    err "answer y or n -- retry"
                     ;;
             esac
         done
@@ -554,7 +574,7 @@ EOF
 
     logrotate_out=$(logrotate -f /etc/logrotate.d/samba 2>&1)
     if echo "$logrotate_out" | grep -qi "error"; then
-        echo "WARNING: logrotate error"
+        warn "logrotate error -- alert"
         echo "$logrotate_out"
     fi
 
@@ -580,7 +600,7 @@ EOF
     # detect server IP from SMB_IFACE
     detected_ip=$(ip -4 addr show "$iface_answer" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
     if ! [[ "$detected_ip" =~ $UH_IPV4 ]]; then
-        echo "WARNING: Could not detect IP for interface $iface_answer"
+        warn "cannot detect IP for interface $iface_answer -- degraded"
         echo "The web panel will keep listening on all interfaces (0.0.0.0:3092)."
         detected_ip=""
     else
@@ -620,27 +640,27 @@ EOF
 
     # save install config
     cat > "$smbstack_env" <<ENV
-LOCAL_USER="$local_user"
-SHARED_NAME="$folder_answer"
-SHARED_PATH="$share_dir"
-SMB_NET="$net_answer"
-SMB_IFACE="$iface_answer"
-SERVER_IP="$detected_ip"
-SMBNAME="$samba_account"
+LOCAL_USER=$local_user
+SHARED_NAME=$folder_answer
+SHARED_PATH=$share_dir
+SMB_NET=$net_answer
+SMB_IFACE=$iface_answer
+SERVER_IP=$detected_ip
+SMBNAME=$samba_account
 
 # MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
 # file per request, by both smbapi.php and smbaudit-diagnostic.php.
 # NOTE: smbaudit.html's own fetch request uses a fixed limit of 50000 in
 # its JS code, independent of this value -- raising MAX_LOG_LINES here does
 # not change what the audit viewer UI requests.
-MAX_LOG_LINES="50000"
+MAX_LOG_LINES=50000
 
 # TRUSTED_PROXIES: IPv4 address(es), comma-separated, whose REMOTE_ADDR
 # is trusted to supply the real client IP via CF-Connecting-IP /
 # X-Forwarded-For headers (used by web/shared.php for audit logging).
 # Default 127.0.0.1 avoids logging the loopback connection of a local
 # tunnel (if any) as the client. Safe to leave as-is for LAN-only use.
-TRUSTED_PROXIES="$proxy_list"
+TRUSTED_PROXIES=$proxy_list
 ENV
     chown root:www-data "$smbstack_env"
     chmod 640 "$smbstack_env"
@@ -667,23 +687,11 @@ ENV
 
 do_update() {
     if [ ! -f "$smbstack_env" ]; then
-        echo "ERROR: smbstack is not installed."
-        exit 1
+        abort "smbstack is not installed -- abort"
     fi
 
     # load saved config
-    local allowed_env_keys=" LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SERVER_IP SMBNAME TRUSTED_PROXIES WATCH_LIMIT_GB WATCH_EXCLUDE MAX_LOG_LINES "
-    while IFS= read -r env_line; do
-        [[ "$env_line" =~ ^[A-Z_]+=.* ]] && {
-            env_key="${env_line%%=*}"
-            env_value="${env_line#*=}"
-            env_value=$(echo "$env_value" | tr -d '"')
-            case "$allowed_env_keys" in
-                *" $env_key "*) export "$env_key=$env_value" ;;
-                *) echo "WARNING: ignoring unknown key in $smbstack_env: $env_key" ;;
-            esac
-        }
-    done < "$smbstack_env"
+    load_conf "$smbstack_env"
     echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
     echo ""
 
@@ -691,8 +699,7 @@ do_update() {
     local backup_zip="${backup_dir}/smbstackbak_$(date +%Y%m%d_%H%M).zip"
 
     if ! mkdir -p "$backup_dir"; then
-        echo "ERROR: cannot create $backup_dir -- abort"
-        exit 1
+        abort "cannot create $backup_dir -- abort"
     fi
 
     local backup_list=() backup_item
@@ -700,7 +707,7 @@ do_update() {
         if [ -e "$backup_item" ]; then
             backup_list+=("$backup_item")
         else
-            echo "INFO: $backup_item not present -- skip"
+            info "$backup_item not present -- skip"
         fi
     done
 
@@ -717,10 +724,7 @@ do_update() {
         fi
     else
         rm -f "$backup_zip"
-        echo "ERROR: cannot write the archive"
-        echo "ERROR: $backup_zip"
-        echo "ERROR: check free space and permissions -- abort"
-        exit 1
+        abort "cannot write $backup_zip, check free space and permissions -- abort"
     fi
 
     echo ""
@@ -782,12 +786,12 @@ do_uninstall() {
     # load samba username and shared path from env
     uninstall_shared_path=""
     if [ -f "$smbstack_env" ]; then
-        SMBNAME=$(grep "^SMBNAME=" "$smbstack_env" | cut -d= -f2 | tr -d '"')
-        if [ -n "$SMBNAME" ]; then
+        load_conf "$smbstack_env"
+        if [ -n "${SMBNAME:-}" ]; then
             pdbedit -x "$SMBNAME" 2>/dev/null || true
             echo "Samba user removed: $SMBNAME"
         fi
-        uninstall_shared_path=$(grep "^SHARED_PATH=" "$smbstack_env" | cut -d= -f2- | tr -d '"')
+        uninstall_shared_path="${SHARED_PATH:-}"
     fi
     userdel smbguest 2>/dev/null || true
 
@@ -826,7 +830,7 @@ do_uninstall() {
     [ -f /lib/systemd/system/smbd.service.bak ] && cp -f /lib/systemd/system/smbd.service.bak /lib/systemd/system/smbd.service
 
     # cron entries
-    # Anchored to the exact lines smbinstall.sh adds (full command/path),
+    # Anchored to the exact lines smbsetup.sh adds (full command/path),
     # instead of bare substrings, so an unrelated user cron job that merely
     # mentions "smbload.sh" or ".recycle" isn't swept away too.
     backup_crontab root
@@ -920,13 +924,15 @@ show_menu() {
             3) do_uninstall; break ;;
             4) do_status; break ;;
             5) exit 0 ;;
-            *) echo "ERROR: Invalid option" ;;
+            *) err "invalid option -- retry" ;;
         esac
     done
 }
 
 # ACTIONS
 # Run the action given on the command line, or fall back to the menu
+log "smbsetup start..."
+
 case "${1:-}" in
     --install) do_install ;;
     --update) do_update ;;
@@ -938,3 +944,5 @@ case "${1:-}" in
         exit 1
         ;;
 esac
+
+log "smbsetup done at: $(date)"

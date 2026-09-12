@@ -30,17 +30,18 @@
 
 - Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
 - `rsyslog`, `logrotate`
-- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd` (checked by `smbinstall.sh`)
-- `inotify-tools`, `procps`, `coreutils`, `findutils` (checked by `tools/smbwatch.sh`)
-- `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed` (checked by `tools/smbload.sh`)
+- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip` (checked by `smbsetup.sh`)
+- `inotify-tools`, `procps`, `coreutils`, `findutils`, `cron`, `util-linux`, `sed`, `grep` (checked by `tools/smbwatch.sh`)
+- `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd` (checked by `tools/smbload.sh`)
 
 ```bash
 apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
-    acl openssl cron iproute2 sudo systemd inotify-tools procps coreutils findutils zip
+    acl openssl cron iproute2 sudo systemd util-linux sed grep inotify-tools \
+    procps coreutils findutils zip
 apt-get install -y --reinstall apache2-doc
 ```
 
-The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbinstall.sh` itself.
+The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbsetup.sh` itself.
 
 <table>
   <tr>
@@ -261,7 +262,7 @@ smbstack/
 │   ├── smbaudit.html               # Audit log viewer UI
 │   ├── smbweb.conf                 # Apache vhost (:3092/?tab=audit and :3092/?tab=shared)
 │   └── sw.js                       # PWA service worker (app-shell cache only)
-└── smbinstall.sh               # Installer: install, update, uninstall, status
+└── smbsetup.sh                 # Installer: install, update, uninstall, status
 ```
 
 <table>
@@ -300,9 +301,9 @@ smbstack/
 /etc/samba/acl/commonveto.txt   # Copied from acl/commonveto.txt by the installer
 ```
 
-> Before adding or removing any cron entry, `smbinstall.sh` and `tools/smbwatch.sh` copy root's crontab to `/etc/bak/crontab/root.bak`. It is a single copy, overwritten on every run, shared with every other project that touches the same crontab, and it is never restored automatically. `--uninstall` does not restore it either: it deletes only its own entries, matched by the full script path, and leaves every other cron job untouched. To roll back, restore the copy by hand with `crontab /etc/bak/crontab/root.bak`.
+> Before adding or removing any cron entry, `smbsetup.sh` and `tools/smbwatch.sh` copy root's crontab to `/etc/bak/crontab/root.bak`. It is a single copy, overwritten on every run, shared with every other project that touches the same crontab, and it is never restored automatically. `--uninstall` does not restore it either: it deletes only its own entries, matched by the full script path, and leaves every other cron job untouched. To roll back, restore the copy by hand with `crontab /etc/bak/crontab/root.bak`.
 >
-> Antes de agregar o quitar cualquier entrada de cron, `smbinstall.sh` y `tools/smbwatch.sh` copian el crontab de root en `/etc/bak/crontab/root.bak`. Es una sola copia, sobrescrita en cada ejecución, compartida con cualquier otro proyecto que toque el mismo crontab, y nunca se restaura de forma automática. `--uninstall` tampoco la restaura: borra únicamente sus propias entradas, identificadas por la ruta completa del script, y deja intactas las demás tareas de cron. Para deshacer un cambio, restaura la copia a mano con `crontab /etc/bak/crontab/root.bak`.
+> Antes de agregar o quitar cualquier entrada de cron, `smbsetup.sh` y `tools/smbwatch.sh` copian el crontab de root en `/etc/bak/crontab/root.bak`. Es una sola copia, sobrescrita en cada ejecución, compartida con cualquier otro proyecto que toque el mismo crontab, y nunca se restaura de forma automática. `--uninstall` tampoco la restaura: borra únicamente sus propias entradas, identificadas por la ruta completa del script, y deja intactas las demás tareas de cron. Para deshacer un cambio, restaura la copia a mano con `crontab /etc/bak/crontab/root.bak`.
 
 ## HOW TO USE
 
@@ -324,9 +325,9 @@ smbstack/
 ```bash
 git clone --depth=1 https://github.com/maravento/smbstack.git
 cd smbstack
-sudo bash smbinstall.sh
+sudo bash smbsetup.sh
 # or, to skip the menu and install directly | o, para saltar el menú e instalar directamente
-sudo bash smbinstall.sh --install
+sudo bash smbsetup.sh --install
 ```
 
 The installer will prompt for:
@@ -365,9 +366,9 @@ The installer will prompt for:
 
 ```bash
 cd smbstack
-sudo bash smbinstall.sh --update
+sudo bash smbsetup.sh --update
 # or | o
-sudo bash smbinstall.sh --uninstall
+sudo bash smbsetup.sh --uninstall
 ```
 
 | File | `--update` | `--uninstall` |
@@ -413,7 +414,7 @@ sudo bash smbinstall.sh --uninstall
 ### Status
 
 ```bash
-sudo bash smbinstall.sh --status
+sudo bash smbsetup.sh --status
 ```
 
 Shows: smbd and winbind service status, Apache port 3092, last 5 audit log entries, and `testparm` summary.
