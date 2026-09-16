@@ -26,7 +26,7 @@
 
 ---
 
-**⚠️ WARNING:** Only tested on Ubuntu 24.04 LTS. Other versions or distros not tested, use at your own risk.
+**⚠️ WARNING:** Tested on Ubuntu 24.04/26.04 LTS. Use on other versions or distributions is at your own risk.
 
 - Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
 - `rsyslog`, `logrotate`
@@ -68,7 +68,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
 
 ### Main Menu
 
-[![smbstack-main](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-main.png)](https://github.com/maravento/smbstack)
+[![smbstack-main](./img/smbstack-main.png)](https://github.com/maravento/smbstack)
 
 <table>
   <tr>
@@ -105,7 +105,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-[![smbstack-botton](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-botton.png)](https://github.com/maravento/smbstack)
+[![smbstack-botton](./img/smbstack-botton.png)](https://github.com/maravento/smbstack)
 
 ### SMBshared
 
@@ -131,7 +131,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-[![smbstack-views](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-views.png)](https://github.com/maravento/smbstack)
+[![smbstack-views](./img/smbstack-views.png)](https://github.com/maravento/smbstack)
 
 <table>
   <tr>
@@ -144,7 +144,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-[![smbstack-files](https://raw.githubusercontent.com/maravento/smbstack/master/img/smbstack-files.png)](https://github.com/maravento/smbstack)
+[![smbstack-files](./img/smbstack-files.png)](https://github.com/maravento/smbstack)
 
 <table>
   <tr>
@@ -725,14 +725,14 @@ sudo crontab -e
       Evaluated and deliberately left out of <code>full_audit:success</code> by default. Every file/directory open — including plain browsing, reads and downloads, not just writes — generates an entry, so a single Explorer window left open on a busy folder produces dozens of near-duplicate lines per second. That noise buries the events actually worth reviewing without adding meaningful traceability, since <code>pwrite</code> already covers the write itself.
       <br><br>
       This is a project default, not a hard limitation. To audit opens/reads too, add it yourself in <code>/etc/samba/smb.conf</code>:
-      <pre><code>full_audit:success = mkdirat renameat unlinkat pwrite openat</code></pre>
+      <code>full_audit:success = mkdirat renameat unlinkat pwrite openat</code>
       Then run <code>testparm</code> and <code>systemctl restart smbd</code>. <code>--update</code> won't touch this — <code>smb.conf</code> is never overwritten after install, so the change persists.
     </td>
     <td style="width: 50%; vertical-align: top;">
       Se evaluó y se dejó fuera de <code>full_audit:success</code> por defecto, a propósito. Cada apertura de archivo o carpeta — incluyendo simple navegación, lecturas y descargas, no solo escrituras — genera una entrada, así que una sola ventana del Explorador abierta sobre una carpeta con actividad produce decenas de líneas casi idénticas por segundo. Ese ruido entierra los eventos que sí vale la pena revisar sin aportar trazabilidad real, ya que <code>pwrite</code> ya cubre la escritura en sí.
       <br><br>
-      Esto es un valor por defecto del proyecto, no una limitación forzosa. Para auditar también aperturas/lecturas, agrégalo tú mismo en <code>/etc/samba/smb.conf</code>:
-      <pre><code>full_audit:success = mkdirat renameat unlinkat pwrite openat</code></pre>
+      Esto es un valor por defecto del proyecto, no una limitación forzosa. Para auditar también aperturas/lecturas, agréguelo manualmente en <code>/etc/samba/smb.conf</code>:
+      <code>full_audit:success = mkdirat renameat unlinkat pwrite openat</code>
       Luego ejecuta <code>testparm</code> y <code>systemctl restart smbd</code>. <code>--update</code> no lo tocará — <code>smb.conf</code> nunca se sobreescribe tras la instalación, así que el cambio persiste.
     </td>
   </tr>

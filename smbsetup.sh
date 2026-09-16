@@ -29,6 +29,18 @@ if ! flock -n 200; then
     exit 1
 fi
 
+script_dir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+log_file="${script_dir}/smbsetup.log"
+{ > "$log_file"; } 2>/dev/null || true
+log() {
+    local msg="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$log_file" 2>/dev/null || true
+}
+info() { printf ' \e[32m \e[0m %s\n' "$*"; log "INFO: $*"; }
+warn() { printf ' \e[33m!\e[0m %s\n' "$*"; log "WARNING: $*"; }
+err()  { printf ' \e[31m \e[0m %s\n' "$*" >&2; log "ERROR: $*"; }
+abort() { err "$*"; exit 1; }
+
 # local_user detection
 detect_local_user() {
     local uid_min uid_max
@@ -77,17 +89,6 @@ done
 # VARIABLES
 # ------------------------------------------------------------------------------
 
-script_dir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
-log_file="${script_dir}/smbsetup.log"
-{ > "$log_file"; } 2>/dev/null || true
-log() {
-    local msg="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$log_file" 2>/dev/null || true
-}
-info() { printf ' \e[32m \e[0m %s\n' "$*"; log "INFO: $*"; }
-warn() { printf ' \e[33m!\e[0m %s\n' "$*"; log "WARNING: $*"; }
-err()  { printf ' \e[31m \e[0m %s\n' "$*" >&2; log "ERROR: $*"; }
-abort() { err "$*"; exit 1; }
 conf_dir="$script_dir/conf"
 web_dir="$script_dir/web"
 tools_dir="$script_dir/tools"
@@ -945,4 +946,4 @@ case "${1:-}" in
         ;;
 esac
 
-log "smbsetup done at: $(date)"
+log "smbsetup done at: $(date '+%Y-%m-%d %H:%M:%S')"

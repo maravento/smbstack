@@ -278,16 +278,25 @@ start() {
 
     printf '%s\n' "${watch_dirs[@]}" > "$state_file"
 
-    log "Starting smbwatch..."
-    log "  Shared path : $SHARED_PATH"
-    log "  Watch limit : ${WATCH_LIMIT_GB} GB per folder"
-    log "  Watching    :"
+    log "INFO: Starting smbwatch..."
+    log "INFO:   Shared path : $SHARED_PATH"
+    log "INFO:   Watch limit : ${WATCH_LIMIT_GB} GB per folder"
+    log "INFO:   Watching    :"
     printf '    %s\n' "${watch_dirs[@]}" | tee -a "$log_file"
-    log "  Excluded    : ${WATCH_EXCLUDE:-none}"
-    log "  Recycle bin : $recycle_dir"
-    log "  Log         : $log_file"
+    log "INFO:   Excluded    : ${WATCH_EXCLUDE:-none}"
+    log "INFO:   Recycle bin : .recycle/smbwatch (under shared path)"
+    log "INFO:   Log         : $log_file"
 
-    inotifywait -m -r -e create --format '%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while read -r new_file; do
+    # A file is handled on close_write, never on create: create fires the
+    # moment the transfer starts, so acting on it would measure the folder
+    # and move the file while it is still being written. A directory only
+    # ever fires create, and is recognized by the ISDIR flag.
+    inotifywait -m -r -e create -e close_write --format '%e|%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
+        case "$event_name" in
+            *ISDIR*)      [[ "$event_name" == CREATE* ]] || continue ;;
+            CLOSE_WRITE*) ;;
+            *)            continue ;;
+        esac
         handle_new_file "$new_file"
     done &
 
@@ -305,7 +314,7 @@ start() {
 # STOP
 # Kill the watcher process group and remove its pid file
 stop() {
-    log "Stopping smbwatch..."
+    log "INFO: Stopping smbwatch..."
     if [ -f "$pid_file" ]; then
         local watch_pid process_group
         watch_pid=$(cat "$pid_file")
@@ -329,18 +338,18 @@ stop() {
 # STATUS
 # Report whether the watcher is running
 status() {
-    log "SMBwatch status..."
+    log "INFO: SMBwatch status..."
     if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
-        log "  SMBwatch is RUNNING (PID $(cat "$pid_file"))"
-        log "  Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
+        log "INFO:   SMBwatch is RUNNING (PID $(cat "$pid_file"))"
+        log "INFO:   Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
         if [ -f "$state_file" ]; then
-            log "  Watching    :"
+            log "INFO:   Watching    :"
             sed 's/^/    /' "$state_file" | tee -a "$log_file"
         else
-            log "  Watching    : (unknown, state file missing)"
+            log "INFO:   Watching    : (unknown, state file missing)"
         fi
     else
-        log "  SMBwatch is STOPPED"
+        log "INFO:   SMBwatch is STOPPED"
     fi
 }
 
@@ -354,11 +363,11 @@ case "${1:-}" in
     start)  start ;;
     stop)   stop ;;
     status) status ;;
-    *)      log "Usage: $(basename "$0") {start|stop|status}" ;;
+    *)      log "INFO: Usage: $(basename "$0") {start|stop|status}" ;;
 esac
 
 # ------------------------------------------------------------------------------
 # END
 # ------------------------------------------------------------------------------
 
-log "smbwatch done at: $(date)"
+log "smbwatch done at: $(date '+%Y-%m-%d %H:%M:%S')"
