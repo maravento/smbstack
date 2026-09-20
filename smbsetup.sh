@@ -199,6 +199,8 @@ select_shared_folder() {
         fi
     done
     share_dir="/home/$local_user/$folder_answer"
+    setfacl -m u:www-data:--x "/home/$local_user"
+    setfacl -m u:smbguest:--x "/home/$local_user"
 
     if [ -d "$share_dir" ]; then
         echo "Folder '$share_dir' already exists. Verifying permissions..."
@@ -409,16 +411,7 @@ do_install() {
     chown -R www-data:www-data "$smbstack_web"
 
     # apache vhosts (both in smbweb.conf)
-    # Listen is opened on all interfaces here only because SERVER_IP isn't
-    # known yet at this point (SMB_IFACE hasn't been prompted for). It gets
-    # narrowed down to just the LAN IP + loopback further below, once
-    # SERVER_IP is detected.
     cp -f /etc/apache2/ports.conf{,.bak} &>/dev/null
-    # drop any :3092 Listen line(s) left by a previous/partial install run
-    # before re-adding 0.0.0.0, so reruns don't produce duplicate Listen
-    # directives (which makes apache2 fail to start on restart).
-    sed -i '/^Listen .*:3092$/d' /etc/apache2/ports.conf
-    echo "Listen 0.0.0.0:3092" | tee -a /etc/apache2/ports.conf
     cp -f "$web_dir/smbweb.conf" /etc/apache2/sites-available/smbweb.conf
     a2ensite -q smbweb.conf
 
@@ -476,32 +469,45 @@ EOF
 
     # smb.conf
     prompt_smb_net_iface() {
-        while true; do
-            read -p "Enter Samba server IP/network [192.168.0.0/24]: " net_answer
-            net_answer="${net_answer:-192.168.0.0/24}"
-            if ! [[ "$net_answer" =~ $UH_CIDR ]]; then
-                err "invalid format, expected x.x.x.x/xx (e.g. 192.168.0.0/24) -- retry"
-                net_answer=""
-            else
-                break
-            fi
-        done
-        local default_iface
-        default_iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1)
-        echo "Available interfaces:"
-        ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | sed 's/^/ /'
-        while true; do
-            read -p "Enter network interface [$default_iface]: " iface_answer
-            iface_answer="${iface_answer:-$default_iface}"
-            if [ -z "$iface_answer" ]; then
-                err "interface cannot be empty -- retry"
-            elif ! ip link show "$iface_answer" &>/dev/null; then
-                err "interface $iface_answer not found -- retry"
-                iface_answer=""
-            else
-                break
-            fi
-        done
+        # SMBSTACK_IFACE lets a caller (e.g. another installer) supply the
+        # interface it already knows, instead of answering the prompt.
+        if [ -n "${SMBSTACK_IFACE:-}" ]; then
+            ip link show "$SMBSTACK_IFACE" &>/dev/null || abort "SMBSTACK_IFACE='$SMBSTACK_IFACE' not found on this system -- abort"
+            iface_answer="$SMBSTACK_IFACE"
+            echo "Network interface: $iface_answer (preset)"
+        else
+            local default_iface
+            default_iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1)
+            echo "Available interfaces:"
+            ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | sed 's/^/ /'
+            while true; do
+                read -p "Enter network interface [$default_iface]: " iface_answer
+                iface_answer="${iface_answer:-$default_iface}"
+                if [ -z "$iface_answer" ]; then
+                    err "interface cannot be empty -- retry"
+                elif ! ip link show "$iface_answer" &>/dev/null; then
+                    err "interface $iface_answer not found -- retry"
+                    iface_answer=""
+                else
+                    break
+                fi
+            done
+        fi
+
+        # Samba network -- derived from the interface, not asked: its address
+        # and prefix already define the network authorised to use Samba and
+        # the web panel.
+        local iface_cidr iface_only iface_prefix o1 o2 o3 o4 ip_num mask_num net_num
+        iface_cidr=$(ip -o -4 addr show dev "$iface_answer" scope global | awk '{print $4; exit}')
+        [[ "$iface_cidr" =~ $UH_CIDR ]] || abort "cannot detect IPv4 address for interface $iface_answer -- abort"
+        iface_only="${iface_cidr%/*}"
+        iface_prefix="${iface_cidr#*/}"
+        IFS=. read -r o1 o2 o3 o4 <<< "$iface_only"
+        ip_num=$(( (o1 << 24) + (o2 << 16) + (o3 << 8) + o4 ))
+        mask_num=$(( 0xFFFFFFFF ^ ((1 << (32 - iface_prefix)) - 1) ))
+        net_num=$(( ip_num & mask_num ))
+        net_answer="$(( (net_num >> 24) & 255 )).$(( (net_num >> 16) & 255 )).$(( (net_num >> 8) & 255 )).$(( net_num & 255 ))/$iface_prefix"
+        echo "Samba network: $net_answer (from $iface_answer)"
     }
 
     apply_smb_conf_placeholders() {
@@ -596,26 +602,29 @@ EOF
     fi
 
     systemctl daemon-reload
-    systemctl restart smbd winbind rsyslog apache2
 
     # detect server IP from SMB_IFACE
     detected_ip=$(ip -4 addr show "$iface_answer" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
     if ! [[ "$detected_ip" =~ $UH_IPV4 ]]; then
-        warn "cannot detect IP for interface $iface_answer -- degraded"
-        echo "The web panel will keep listening on all interfaces (0.0.0.0:3092)."
-        detected_ip=""
-    else
-        # Narrow the web panel's Listen directive from all-interfaces down to
-        # just the chosen LAN IP, plus loopback (needed for a local tunnel
-        # daemon like cloudflared, which connects to Apache via 127.0.0.1 --
-        # see TRUSTED_PROXIES). This was written as 0.0.0.0:3092 earlier
-        # because SERVER_IP wasn't known yet at that point in the install.
-        sed -i "s|^Listen 0.0.0.0:3092\$|Listen $detected_ip:3092\nListen 127.0.0.1:3092|" /etc/apache2/ports.conf
-        systemctl restart apache2
+        abort "cannot detect IPv4 address for interface $iface_answer -- abort"
     fi
+    # Drop any prior Listen line for this port (a stale IP or a bare
+    # "Listen 3092") before adding the current ones.
+    sed -i -E "/^Listen [^[:space:]]*:3092\$/d; /^Listen 3092\$/d" /etc/apache2/ports.conf
+    # The LAN IP plus loopback, needed for a local tunnel daemon like
+    # cloudflared, which connects to Apache via 127.0.0.1 (see
+    # TRUSTED_PROXIES).
+    echo "Listen ${detected_ip}:3092" >> /etc/apache2/ports.conf
+    echo "Listen 127.0.0.1:3092" >> /etc/apache2/ports.conf
+    info "Port 3092 bound to ${detected_ip} and 127.0.0.1"
+
+    systemctl restart smbd winbind rsyslog apache2
 
     # create Samba account for local user
     samba_account="$local_user"
+    printf "\n"
+    info "Create Samba Password: $samba_account"
+    printf "\n"
     while true; do
         read -s -p "Enter Samba password for $samba_account: " smb_pass; echo
         if [ "${#smb_pass}" -lt 8 ]; then
@@ -641,6 +650,10 @@ EOF
 
     # save install config
     cat > "$smbstack_env" <<ENV
+# =============================================================================
+# SMBstack
+# /var/www/smbstack/smbstack.env
+# =============================================================================
 LOCAL_USER=$local_user
 SHARED_NAME=$folder_answer
 SHARED_PATH=$share_dir
@@ -662,6 +675,7 @@ MAX_LOG_LINES=50000
 # Default 127.0.0.1 avoids logging the loopback connection of a local
 # tunnel (if any) as the client. Safe to leave as-is for LAN-only use.
 TRUSTED_PROXIES=$proxy_list
+# =============================================================================
 ENV
     chown root:www-data "$smbstack_env"
     chmod 640 "$smbstack_env"
@@ -798,14 +812,13 @@ do_uninstall() {
 
     # apache sites
     a2dissite -q smbweb.conf &>/dev/null
-    # Matches whichever variant install left behind: the original
-    # 0.0.0.0:3092 (if SERVER_IP detection failed), or the narrowed
-    # <SERVER_IP>:3092 + 127.0.0.1:3092 pair. Anchored to the fixed port
-    # 3092, which is unique to this project, not to a specific IP.
+    # Removes the <SERVER_IP>:3092 + 127.0.0.1:3092 pair install added.
+    # Anchored to the fixed port 3092, which is unique to this project,
+    # not to a specific IP.
     sed -i '/^Listen .*:3092$/d' /etc/apache2/ports.conf
     rm -f /etc/apache2/sites-available/smbweb.conf
-    # Not restored from ports.conf.bak on purpose: the line above already
-    # removes exactly the one line the installer added, without touching
+    # Not restored from ports.conf.bak on purpose: the lines above already
+    # remove exactly the lines the installer added, without touching
     # anything else the admin may have added to ports.conf since install.
     rm -f /etc/apache2/ports.conf.bak
 

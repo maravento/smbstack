@@ -217,6 +217,18 @@ start() {
         exit 1
     fi
 
+    # first time either key is written: wrap them in a divider block, like uhm.env does for its own sections
+    watch_header_added=0
+    if ! grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" && ! grep -q '^WATCH_EXCLUDE=' "$smbstack_env"; then
+        {
+            echo ""
+            echo "# ============================================================================="
+            echo "# SMBWATCH (added by smbwatch.sh on first run)"
+            echo "# ============================================================================="
+        } >> "$smbstack_env"
+        watch_header_added=1
+    fi
+
     # CHECK AND SET WATCH_LIMIT_GB
     if [ -z "${WATCH_LIMIT_GB:-}" ]; then
         while true; do
@@ -245,6 +257,9 @@ start() {
             set_env_var "WATCH_EXCLUDE" "NONE"
             log "INFO: no folders excluded"
         fi
+    fi
+    if [ "$watch_header_added" -eq 1 ]; then
+        echo "# =============================================================================" >> "$smbstack_env"
     fi
     [ "$WATCH_EXCLUDE" = "NONE" ] && WATCH_EXCLUDE=""
 

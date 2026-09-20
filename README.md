@@ -246,12 +246,15 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
 smbstack/
 ├── acl/                         # Static access-control lists for Samba
 │   └── commonveto.txt              # Veto list for common unwanted file types (active by default in smb.conf)
+│
 ├── conf/                        # Samba and rsyslog configuration
 │   ├── fullaudit.conf              # rsyslog full audit rule
 │   └── smb.conf                    # Samba main config (placeholders: your_user, compartida)
+│
 ├── tools/                      # Background watchdog scripts
 │   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch)
 │   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
+│
 ├── web/                        # Web front-end for the audit log viewer and shared-folder browser
 │   ├── icon.svg                    # PWA / apple-touch icon
 │   ├── index.php                   # Main page (Audit / Shared tabs)
@@ -262,6 +265,7 @@ smbstack/
 │   ├── smbaudit.html               # Audit log viewer UI
 │   ├── smbweb.conf                 # Apache vhost (:3092/?tab=audit and :3092/?tab=shared)
 │   └── sw.js                       # PWA service worker (app-shell cache only)
+│
 └── smbsetup.sh                 # Installer: install, update, uninstall, status
 ```
 
@@ -335,10 +339,11 @@ The installer will prompt for:
 | Prompt | Description |
 |--------|-------------|
 | Shared folder name | Name for the shared folder (created under `/home/$local_user/`) |
-| Samba server network | IP/network in CIDR format (e.g. `192.168.0.0/24`) |
-| Network interface | Selected from available interfaces listed |
+| Network interface | Selected from available interfaces listed. The Samba network is derived from its address and prefix |
 | Samba username | Samba account to create |
 | Overwrite smb.conf | Only asked if `/etc/samba/smb.conf` already exists |
+
+Set `SMBSTACK_IFACE` to skip the interface prompt (e.g. `SMBSTACK_IFACE=eth1 sudo bash smbsetup.sh --install`). Another installer deploying SMBstack uses this to pass the interface it already knows.
 
 <table>
   <tr>
