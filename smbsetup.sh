@@ -601,6 +601,11 @@ EOF
         (crontab -l 2>/dev/null || true; echo "*/5 * * * * $smbstack_tools/smbload.sh") | crontab -
     fi
 
+    if [ -x "$smbstack_tools/smbbk.sh" ]; then
+        echo "Registering smbbk.sh monthly cron entry ..."
+        "$smbstack_tools/smbbk.sh" install || echo "WARNING: cron entry not registered -- alert"
+    fi
+
     systemctl daemon-reload
 
     # detect server IP from SMB_IFACE
@@ -710,36 +715,11 @@ do_update() {
     echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
     echo ""
 
-    local backup_dir="/etc/bak/smbstack"
-    local backup_zip="${backup_dir}/smbstackbak_$(date +%Y%m%d_%H%M).zip"
-
-    if ! mkdir -p "$backup_dir"; then
-        abort "cannot create $backup_dir -- abort"
-    fi
-
-    local backup_list=() backup_item
-    for backup_item in "$smbstack_web" "$smbstack_tools"; do
-        if [ -e "$backup_item" ]; then
-            backup_list+=("$backup_item")
-        else
-            info "$backup_item not present -- skip"
-        fi
-    done
-
-    if (( ${#backup_list[@]} == 0 )); then
-        echo "Nothing to back up yet (first update on this install)"
-    elif zip -r -q "$backup_zip" "${backup_list[@]}"; then
-        chmod 600 "$backup_zip"
-        echo "Backup written to $backup_zip"
-
-        # keep only the last 3
-        local old_backups=("$backup_dir"/smbstackbak_*.zip)
-        if (( ${#old_backups[@]} > 3 )); then
-            printf '%s\n' "${old_backups[@]}" | sort | head -n -3 | xargs -r rm -f
-        fi
+    if [ -x "$smbstack_tools/smbbk.sh" ]; then
+        echo "Creating backup with smbbk.sh ..."
+        "$smbstack_tools/smbbk.sh" || echo "WARNING: backup failed, continuing -- alert"
     else
-        rm -f "$backup_zip"
-        abort "cannot write $backup_zip, check free space and permissions -- abort"
+        echo "WARNING: smbbk.sh not found, no backup -- alert"
     fi
 
     echo ""
@@ -798,6 +778,8 @@ do_update() {
 # ------------------------------------------------------------------------------
 
 do_uninstall() {
+    warn "Run tools/smbbk.sh first if you want a backup."
+
     # load samba username and shared path from env
     uninstall_shared_path=""
     if [ -f "$smbstack_env" ]; then
@@ -824,6 +806,9 @@ do_uninstall() {
 
     # stop smbwatch before removing its files
     [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" stop 2>/dev/null || true
+
+    # smbbk.sh cron entry
+    [ -x "$smbstack_tools/smbbk.sh" ] && "$smbstack_tools/smbbk.sh" uninstall || true
 
     # project web directory
     rm -rf "$smbstack_www"
