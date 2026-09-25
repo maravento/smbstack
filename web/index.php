@@ -13,7 +13,7 @@
 // the href/class attributes below; any new tab value added here must also be
 // added to $allowed_tabs.
 $tab = isset($_GET['tab']) ? $_GET['tab'] : 'shared';
-$allowed_tabs = ['shared', 'audit'];
+$allowed_tabs = ['shared', 'audit', 'report'];
 if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 ?>
 <!DOCTYPE html>
@@ -199,12 +199,17 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
         <a class="tab <?= $tab === 'audit' ? 'active' : '' ?>" href="?tab=audit">
             <span class="tab-icon">📊</span> Audit
         </a>
+        <a class="tab <?= $tab === 'report' ? 'active' : '' ?>" href="?tab=report">
+            <span class="tab-icon">💾</span> Report
+        </a>
     </div>
 </div>
 
 <div class="frame-container">
     <?php if ($tab === 'shared'): ?>
         <iframe src="/shared/" id="frame-shared"></iframe>
+    <?php elseif ($tab === 'report'): ?>
+        <iframe src="/report/" id="frame-report"></iframe>
     <?php else: ?>
         <iframe src="/audit/" id="frame-audit"></iframe>
     <?php endif; ?>
@@ -220,7 +225,7 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
     setInterval(updateClock, 1000);
 
     function broadcastTheme(dark) {
-        ['frame-shared', 'frame-audit'].forEach(function(id) {
+        ['frame-shared', 'frame-audit', 'frame-report'].forEach(function(id) {
             var f = document.getElementById(id);
             if (f && f.contentWindow) {
                 f.contentWindow.postMessage({ smbstackTheme: dark ? 'dark' : 'light' }, window.location.origin);

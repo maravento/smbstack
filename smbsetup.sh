@@ -79,7 +79,7 @@ fi
 echo "Using local user: $local_user"
 
 # dependencies
-for dep_pkg in apache2 apache2-utils libapache2-mod-php php rsyslog logrotate acl openssl cron iproute2 sudo systemd util-linux zip; do
+for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
         abort "dependency '$dep_pkg' is not installed -- abort"
     fi
@@ -136,21 +136,22 @@ load_conf() {
     done < "$conf_file"
 }
 
-# crontab backup
-backup_crontab() {
-    local cron_user="$1"
-    local backup_dir="/etc/bak/crontab"
-    local crontab_tmp
+# CRON_D
+# Add or replace one line in the project's single cron.d file
+cron_d_set() {
+    local match="$1" line="$2"
+    local cron_file="/etc/cron.d/smbstack"
+    local cron_tmp
 
-    [ -n "$cron_user" ] || return 1
-    mkdir -p "$backup_dir" || return 1
-
-    crontab_tmp=$(mktemp)
-    if crontab -u "$cron_user" -l > "$crontab_tmp" 2>/dev/null && [ -s "$crontab_tmp" ]; then
-        mv -f "$crontab_tmp" "$backup_dir/${cron_user}.bak"
+    cron_tmp=$(mktemp)
+    [ -f "$cron_file" ] && { grep -vF "$match" "$cron_file" > "$cron_tmp" || true; }
+    [ -n "$line" ] && printf '%s\n' "$line" >> "$cron_tmp"
+    if [ -s "$cron_tmp" ]; then
+        install -m 644 -o root -g root "$cron_tmp" "$cron_file"
     else
-        rm -f "$crontab_tmp"
+        rm -f "$cron_file"
     fi
+    rm -f "$cron_tmp"
 }
 
 retry_cmd() {
@@ -164,6 +165,20 @@ retry_cmd() {
         attempt=$((attempt + 1))
         sleep 10
     done
+}
+
+# checking conflicting pre-installed packages
+check_conflicts() {
+    local role="$1"; shift
+    local found=()
+    for dep_pkg in "$@"; do
+        if dpkg-query -W -f='${Status}' "$dep_pkg" 2>/dev/null | grep -q "ok installed"; then
+            found+=("$dep_pkg")
+        fi
+    done
+    if [ "${#found[@]}" -gt 0 ]; then
+        abort "conflicting $role package(s) installed: ${found[*]}, remove them with apt purge -- abort"
+    fi
 }
 
 check_repo() {
@@ -340,9 +355,9 @@ do_install() {
     check_already_installed
 
     # dependency check
-    if systemctl is-active --quiet nginx; then
-        abort "nginx is running, disable it first with systemctl stop nginx -- abort"
-    fi
+    check_conflicts "web server" nginx lighttpd caddy
+    check_conflicts "SMB server" ksmbd-tools
+    check_conflicts "syslog" syslog-ng
 
     if ! systemctl is-active --quiet apache2; then
         abort "apache2 is not running, start it first with systemctl start apache2 -- abort"
@@ -403,7 +418,7 @@ do_install() {
     cp -f "$web_dir/smbaudit.html" "$smbstack_web/"
     cp -f "$web_dir/smbapi.php" "$smbstack_web/"
     cp -f "$web_dir/smbaudit-diagnostic.php" "$smbstack_web/"
-    cp -f "$web_dir/shared.php" "$smbstack_web/"
+    cp -f "$web_dir/smbshared.php" "$smbstack_web/"
     cp -f "$web_dir/manifest.json" "$smbstack_web/"
     cp -f "$web_dir/sw.js" "$smbstack_web/"
     cp -f "$web_dir/icon.svg" "$smbstack_web/"
@@ -421,7 +436,7 @@ do_install() {
         "$smbstack_web/smbaudit.html" \
         "$smbstack_web/smbapi.php" \
         "$smbstack_web/smbaudit-diagnostic.php" \
-        "$smbstack_web/shared.php"; do
+        "$smbstack_web/smbshared.php"; do
         [ -f "$deploy_file" ] || continue
         escaped_user=$(printf '%s' "$local_user" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$deploy_file"
@@ -455,7 +470,6 @@ do_install() {
 EOF
 
     # smbwatch logrotate
-    cp -f /etc/logrotate.d/smbwatch{,.bak} &>/dev/null
     cat > /etc/logrotate.d/smbwatch <<'EOF'
 /var/log/smbwatch.log {
     weekly
@@ -586,24 +600,33 @@ EOF
     fi
 
     # cron: recycle bin weekly cleanup
-    backup_crontab root
-    if ! crontab -l 2>/dev/null | grep -qF ".recycle"; then
-        (crontab -l 2>/dev/null || true; echo "@weekly find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1") | crontab -
-    fi
+    cron_d_set "$share_dir/.recycle/" "@weekly root find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1"
+
+    # cron: folder size cache cleanup -- entries expire after SIZE_CACHE_TTL,
+    # so anything older than an hour is dead weight
+    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1"
 
     # service watchdog
     mkdir -p "$smbstack_tools"
     cp -f "$tools_dir"/*.sh "$smbstack_tools/"
     chmod +x "$smbstack_tools"/*.sh
     # cron: service watchdog
-    if ! crontab -l 2>/dev/null | grep -qF "smbload.sh"; then
-        backup_crontab root
-        (crontab -l 2>/dev/null || true; echo "*/5 * * * * $smbstack_tools/smbload.sh") | crontab -
-    fi
+    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh"
+
+    # legacy entries in root's crontab, from versions before /etc/cron.d
+    for legacy_path in "$share_dir/.recycle/" "$smbstack_tools/smbload.sh" \
+        "$smbstack_tools/smbwatch.sh" "$smbstack_tools/smbbk.sh" "$smbstack_tools/smbreport.sh"; do
+        crontab -l 2>/dev/null | { grep -vF "$legacy_path" || true; } | crontab - 2>/dev/null || true
+    done
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         echo "Registering smbbk.sh monthly cron entry ..."
         "$smbstack_tools/smbbk.sh" install || echo "WARNING: cron entry not registered -- alert"
+    fi
+
+    if [ -x "$smbstack_tools/smbreport.sh" ]; then
+        echo "Registering smbreport.sh daily cron entry ..."
+        "$smbstack_tools/smbreport.sh" install || echo "WARNING: cron entry not registered -- alert"
     fi
 
     systemctl daemon-reload
@@ -643,7 +666,7 @@ EOF
     printf "%s\n%s\n" "$smb_pass" "$smb_pass" | smbpasswd -a -s "$samba_account"
     unset smb_pass smb_pass2
 
-    # TRUSTED_PROXIES: used by web/shared.php to decide whether the
+    # TRUSTED_PROXIES: used by web/smbshared.php to decide whether the
     # CF-Connecting-IP / X-Forwarded-For headers can be trusted when
     # logging the client IP for web operations (upload/mkdir/delete).
     # Set to 127.0.0.1 so that, if this host is ever reached through a
@@ -676,7 +699,7 @@ MAX_LOG_LINES=50000
 
 # TRUSTED_PROXIES: IPv4 address(es), comma-separated, whose REMOTE_ADDR
 # is trusted to supply the real client IP via CF-Connecting-IP /
-# X-Forwarded-For headers (used by web/shared.php for audit logging).
+# X-Forwarded-For headers (used by web/smbshared.php for audit logging).
 # Default 127.0.0.1 avoids logging the loopback connection of a local
 # tunnel (if any) as the client. Safe to leave as-is for LAN-only use.
 TRUSTED_PROXIES=$proxy_list
@@ -739,7 +762,7 @@ do_update() {
         [ -f "$source_file" ] || continue
         base_name="$(basename "$source_file")"
         case "$base_name" in
-            smbaudit.html|smbapi.php|smbaudit-diagnostic.php|shared.php)
+            smbaudit.html|smbapi.php|smbaudit-diagnostic.php|smbshared.php)
                 dest_path="$smbstack_web/$base_name"
                 ;;
             *)
@@ -810,6 +833,9 @@ do_uninstall() {
     # smbbk.sh cron entry
     [ -x "$smbstack_tools/smbbk.sh" ] && "$smbstack_tools/smbbk.sh" uninstall || true
 
+    # smbreport.sh cron entry
+    [ -x "$smbstack_tools/smbreport.sh" ] && "$smbstack_tools/smbreport.sh" uninstall || true
+
     # project web directory
     rm -rf "$smbstack_www"
 
@@ -820,7 +846,7 @@ do_uninstall() {
     # logrotate
     [ -f /etc/logrotate.d/samba.bak ] && cp -f /etc/logrotate.d/samba.bak /etc/logrotate.d/samba
     [ -f /etc/logrotate.d/rsyslog.bak ] && cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog
-    rm -f /etc/logrotate.d/smbwatch /etc/logrotate.d/smbwatch.bak
+    rm -f /etc/logrotate.d/smbwatch
 
     # smb.conf
     [ -f /etc/samba/smb.conf.bak ] && cp -f /etc/samba/smb.conf.bak /etc/samba/smb.conf
@@ -829,22 +855,16 @@ do_uninstall() {
     [ -f /lib/systemd/system/smbd.service.bak ] && cp -f /lib/systemd/system/smbd.service.bak /lib/systemd/system/smbd.service
 
     # cron entries
-    # Anchored to the exact lines smbsetup.sh adds (full command/path),
-    # instead of bare substrings, so an unrelated user cron job that merely
-    # mentions "smbload.sh" or ".recycle" isn't swept away too.
-    backup_crontab root
-    cron_tmp=$(mktemp)
-    crontab -l 2>/dev/null > "$cron_tmp" || true
-    if [ -n "$uninstall_shared_path" ]; then
-        grep -vF "find \"$uninstall_shared_path/.recycle/\"" "$cron_tmp" > "${cron_tmp}.next" || true
-        mv "${cron_tmp}.next" "$cron_tmp"
-    fi
-    grep -vF "$smbstack_tools/smbload.sh" "$cron_tmp" > "${cron_tmp}.next" || true
-    mv "${cron_tmp}.next" "$cron_tmp"
-    grep -vF "$smbstack_tools/smbwatch.sh" "$cron_tmp" > "${cron_tmp}.next" || true
-    mv "${cron_tmp}.next" "$cron_tmp"
-    crontab "$cron_tmp"
-    rm -f "$cron_tmp"
+    rm -f /etc/cron.d/smbstack
+
+    # legacy entries in root's crontab, from versions before /etc/cron.d.
+    # Matched by full command/path, so an unrelated cron job that merely
+    # mentions "smbload.sh" or ".recycle" is not swept away too.
+    for legacy_path in "${uninstall_shared_path:-}/.recycle/" "$smbstack_tools/smbload.sh" \
+        "$smbstack_tools/smbwatch.sh" "$smbstack_tools/smbbk.sh" "$smbstack_tools/smbreport.sh"; do
+        [ "$legacy_path" = "/.recycle/" ] && continue
+        crontab -l 2>/dev/null | { grep -vF "$legacy_path" || true; } | crontab - 2>/dev/null || true
+    done
 
     # samba packages
     DEBIAN_FRONTEND=noninteractive apt-get remove -y samba samba-common samba-common-bin smbclient winbind cifs-utils

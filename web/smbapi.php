@@ -42,6 +42,10 @@ define('LOG_FILES', [
 ]);
 define('MAX_LINES', ctype_digit((string)$max_log_lines) && (int)$max_log_lines > 0 ? (int)$max_log_lines : 50000);
 
+// Disk usage report, written by smbreport.sh from cron. This API never walks
+// the shared folder: a full walk takes minutes and PHP would cut it short.
+define('REPORT_FILE', '/var/www/smbstack/web/smbreport.json');
+
 class SambaLogReader {
     private $logFiles;
     
@@ -179,6 +183,23 @@ try {
             'data' => array_values($logs),
             'count' => count($logs)
         ]);
+    } elseif ($action === 'getReport') {
+        if (!is_readable(REPORT_FILE)) {
+            echo json_encode([
+                'success' => true,
+                'data' => null,
+                'message' => 'No report yet. It is built daily at 03:00 by smbreport.sh'
+            ]);
+        } else {
+            $report = json_decode(file_get_contents(REPORT_FILE), true);
+            if ($report === null) {
+                throw new Exception("Malformed report");
+            }
+            echo json_encode([
+                'success' => true,
+                'data' => $report
+            ]);
+        }
     } else {
         throw new Exception("Invalid action");
     }

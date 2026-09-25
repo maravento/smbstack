@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMBstack — Disk Report</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💾</text></svg>" type="image/svg+xml">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #e2e8f0 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 0;
+            transition: background .2s, color .2s;
+        }
+
+        /* ── Dark mode ────────────────────────────────────────────────── */
+        body.dark { background: #0f1117; color: #e2e8f0; }
+        body.dark .summary,
+        body.dark .table-container { background: #141721; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+        body.dark .summary { color: #cbd5e0; }
+        body.dark .summary-item strong { color: #90a4ae; }
+        body.dark th { background: #1a1d2e; color: #90a4ae; border-bottom-color: #232838; }
+        body.dark td { border-bottom-color: #1a1f2e; }
+        body.dark tr:hover { background: #1a1d2e; }
+        body.dark .no-data, body.dark .loading { color: #607d8b; }
+        body.dark .section-title { color: #cbd5e0; }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: #2c3e50;
+            padding: 0.75rem 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: white;
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .summary {
+            background: white;
+            padding: 1rem;
+            margin: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            color: #475569;
+        }
+
+        .summary-item strong {
+            display: block;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+        }
+
+        .summary-item span {
+            font-size: 1rem;
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        .section-title {
+            margin: 1.5rem 1rem 0.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow-x: auto;
+            margin: 1rem;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 600px;
+        }
+
+        th, td {
+            padding: 0.75rem 0.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f8fafc;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            font-size: 0.85rem;
+        }
+
+        td {
+            font-size: 0.85rem;
+            word-break: break-all;
+        }
+
+        th:not(:first-child), td:not(:first-child) {
+            text-align: right;
+            white-space: nowrap;
+            width: 110px;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .bar {
+            background: #e2e8f0;
+            border-radius: 4px;
+            height: 8px;
+            width: 100%;
+            min-width: 120px;
+        }
+
+        .bar span {
+            display: block;
+            height: 100%;
+            border-radius: 4px;
+            background: #2563eb;
+        }
+
+        body.dark .bar { background: #1a1d2e; }
+        body.dark .bar span { background: #4a7fd4; }
+
+        .bar-cell { width: auto; padding-right: 1.5rem; }
+
+        .no-data, .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+        }
+
+        /* Column widths for the extensions table only */
+        #extTable {
+            table-layout: fixed;
+        }
+
+        #extTable th:first-child,
+        #extTable td:first-child {
+            width: 20%;
+        }
+
+        #extTable .bar-cell {
+            width: 33%;
+        }
+
+        #extTable th:nth-child(3), #extTable td:nth-child(3),
+        #extTable th:nth-child(4), #extTable td:nth-child(4),
+        #extTable th:nth-child(5), #extTable td:nth-child(5),
+        #extTable th:nth-child(6), #extTable td:nth-child(6) {
+            width: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💾 SMBstack &mdash; Disk Report</h1>
+        </div>
+
+        <div class="summary" id="summary">
+            <div class="summary-item"><span class="loading">Loading report...</span></div>
+        </div>
+
+        <div class="section-title">Top extensions by size</div>
+        <div class="table-container">
+            <table id="extTable">
+                <thead>
+                    <tr><th>Extension</th><th class="bar-cell"></th><th>Files</th><th>Avg. size</th><th>Total size</th><th>Share</th></tr>
+                </thead>
+                <tbody id="reportExt"></tbody>
+            </table>
+        </div>
+
+        <div class="section-title">Top folders by size</div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Folder</th><th>Files</th><th>Size</th></tr>
+                </thead>
+                <tbody id="reportDir"></tbody>
+            </table>
+        </div>
+
+        <div class="section-title">Largest files</div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>File</th><th>Size</th></tr>
+                </thead>
+                <tbody id="reportFiles"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function esc(s) {
+            return String(s === null || s === undefined ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function humanSize(bytes) {
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let value = bytes, unit = 0;
+            while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+            return value.toFixed(unit === 0 ? 0 : 1) + ' ' + units[unit];
+        }
+
+        function initTheme() {
+            var saved = '';
+            try { saved = localStorage.getItem('smbstack_theme') || ''; } catch (e) {}
+            if (saved === 'dark') document.body.classList.add('dark');
+        }
+
+        window.addEventListener('message', function (e) {
+            if (e.origin !== window.location.origin || !e.data || !e.data.smbstackTheme) return;
+            document.body.classList.toggle('dark', e.data.smbstackTheme === 'dark');
+        });
+
+        // The report is built daily by smbreport.sh. This page only reads it:
+        // walking the shared folder from a web request would take minutes.
+        async function loadReport() {
+            const summary = document.getElementById('summary');
+
+            try {
+                const response = await fetch('/report/smbapi.php?action=getReport');
+                if (!response.ok) {
+                    throw new Error('Failed to load report');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error('Failed to load report');
+                }
+
+                if (!result.data) {
+                    summary.innerHTML = '<div class="summary-item"><span class="no-data">' +
+                        esc(result.message || 'No report yet.') + '</span></div>';
+                    return;
+                }
+
+                const report = result.data;
+
+                summary.innerHTML =
+                    '<div class="summary-item"><strong>Folder</strong><span>' + esc(report.folder) + '</span></div>' +
+                    '<div class="summary-item"><strong>Files</strong><span>' + report.total_files + '</span></div>' +
+                    '<div class="summary-item"><strong>Total size</strong><span>' + humanSize(report.total_bytes) + '</span></div>' +
+                    '<div class="summary-item"><strong>Generated</strong><span>' + esc(report.generated) + '</span></div>';
+
+                document.getElementById('reportExt').innerHTML = report.extensions.map(function (row) {
+                    const share = report.total_bytes > 0 ? (row.bytes * 100 / report.total_bytes) : 0;
+                    const avgBytes = row.files > 0 ? row.bytes / row.files : 0;
+                    return '<tr><td>' + esc(row.name) + '</td>' +
+                           '<td class="bar-cell"><div class="bar"><span style="width:' + share.toFixed(1) + '%"></span></div></td>' +
+                           '<td>' + row.files + '</td><td>' + humanSize(avgBytes) + '</td><td>' + humanSize(row.bytes) +
+                           '</td><td>' + share.toFixed(1) + '%</td></tr>';
+                }).join('');
+
+                document.getElementById('reportDir').innerHTML = report.folders.map(function (row) {
+                    return '<tr><td>' + esc(row.path) + '</td><td>' + row.files +
+                           '</td><td>' + humanSize(row.bytes) + '</td></tr>';
+                }).join('');
+
+                document.getElementById('reportFiles').innerHTML = report.files.map(function (row) {
+                    return '<tr><td>' + esc(row.path) + '</td><td>' + humanSize(row.bytes) + '</td></tr>';
+                }).join('');
+
+            } catch (error) {
+                summary.innerHTML = '<div class="summary-item"><span class="no-data">Error loading report.</span></div>';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initTheme();
+            loadReport();
+        });
+    </script>
+</body>
+</html>

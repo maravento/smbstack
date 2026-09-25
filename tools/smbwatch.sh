@@ -80,21 +80,22 @@ UH_UINT='^(0|[1-9][0-9]*)$'
 # FUNCTIONS
 # ------------------------------------------------------------------------------
 
-# crontab backup
-backup_crontab() {
-    local cron_user="$1"
-    local backup_dir="/etc/bak/crontab"
-    local crontab_tmp
+# CRON_D
+# Add or replace one line in the project's single cron.d file
+cron_d_set() {
+    local match="$1" line="$2"
+    local cron_file="/etc/cron.d/smbstack"
+    local cron_tmp
 
-    [ -n "$cron_user" ] || return 1
-    mkdir -p "$backup_dir" || return 1
-
-    crontab_tmp=$(mktemp)
-    if crontab -u "$cron_user" -l > "$crontab_tmp" 2>/dev/null && [ -s "$crontab_tmp" ]; then
-        mv -f "$crontab_tmp" "$backup_dir/${cron_user}.bak"
+    cron_tmp=$(mktemp)
+    [ -f "$cron_file" ] && { grep -vF "$match" "$cron_file" > "$cron_tmp" || true; }
+    [ -n "$line" ] && printf '%s\n' "$line" >> "$cron_tmp"
+    if [ -s "$cron_tmp" ]; then
+        install -m 644 -o root -g root "$cron_tmp" "$cron_file"
     else
-        rm -f "$crontab_tmp"
+        rm -f "$cron_file"
     fi
+    rm -f "$cron_tmp"
 }
 
 # $! only captures the PID of the last stage of the "inotifywait | while read"
@@ -318,12 +319,12 @@ start() {
     echo $! > "$pid_file"
     log "INFO: started with PID $(cat "$pid_file")"
 
-    # add @reboot cron entry if not already present
-    if ! crontab -l 2>/dev/null | grep -q "smbwatch.sh start"; then
-        backup_crontab root
-        (crontab -l 2>/dev/null; echo "@reboot $script_path start") | crontab -
-        log "INFO: added to cron @reboot"
-    fi
+    # add @reboot cron entry
+    cron_d_set "$script_path" "@reboot root $script_path start"
+    log "INFO: added to cron @reboot"
+
+    # legacy entry in root's crontab, from versions before /etc/cron.d
+    crontab -l 2>/dev/null | { grep -vF "$script_path" || true; } | crontab - 2>/dev/null || true
 }
 
 # STOP

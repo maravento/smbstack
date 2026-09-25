@@ -121,6 +121,24 @@ trap 'rm -f "$tmp_users_file"' EXIT
 # FUNCTIONS
 # ------------------------------------------------------------------------------
 
+# CRON_D
+# Add or replace one line in the project's single cron.d file
+cron_d_set() {
+    local match="$1" line="$2"
+    local cron_file="/etc/cron.d/smbstack"
+    local cron_tmp
+
+    cron_tmp=$(mktemp)
+    [ -f "$cron_file" ] && { grep -vF "$match" "$cron_file" > "$cron_tmp" || true; }
+    [ -n "$line" ] && printf '%s\n' "$line" >> "$cron_tmp"
+    if [ -s "$cron_tmp" ]; then
+        install -m 644 -o root -g root "$cron_tmp" "$cron_file"
+    else
+        rm -f "$cron_file"
+    fi
+    rm -f "$cron_tmp"
+}
+
 # Monthly is the floor, not a recommendation: it exists so an untouched
 # system still has a recent copy. Run it by hand before any change.
 register_cron() {
@@ -137,25 +155,20 @@ register_cron() {
         log "INFO: deployed to $installed_path"
     fi
 
-    local cron_entry="@monthly $installed_path"
-    local current_crontab
-    current_crontab=$(crontab -l 2>/dev/null || true)
-    if echo "$current_crontab" | grep -vE '^\s*#' | grep -qF "$installed_path"; then
-        log "INFO: cron entry already present -- skip"
-    else
-        { printf '%s\n%s\n' "$current_crontab" "$cron_entry"; } | crontab -
-        log "INFO: cron entry registered, runs @monthly"
-        log "INFO: $installed_path"
-    fi
+    cron_d_set "$installed_path" "@monthly root $installed_path"
+    log "INFO: cron entry registered, runs @monthly"
+    log "INFO: $installed_path"
+
+    # legacy entry in root's crontab, from versions before /etc/cron.d
+    crontab -l 2>/dev/null | { grep -vF "$installed_path" || true; } | crontab - 2>/dev/null || true
 }
 
 deregister_cron() {
-    if crontab -l 2>/dev/null | grep -qF "$installed_path"; then
-        crontab -l 2>/dev/null | { grep -vF "$installed_path" || true; } | crontab -
-        log "INFO: cron entry removed, archives kept"
-    else
-        log "INFO: no cron entry to remove -- skip"
-    fi
+    cron_d_set "$installed_path" ""
+    log "INFO: cron entry removed, archives kept"
+
+    # legacy entry in root's crontab, from versions before /etc/cron.d
+    crontab -l 2>/dev/null | { grep -vF "$installed_path" || true; } | crontab - 2>/dev/null || true
 }
 
 case "${1:-}" in
@@ -223,7 +236,7 @@ for backup_item in \
     /etc/logrotate.d/smbwatch \
     /etc/logrotate.d/rsyslog \
     /lib/systemd/system/smbd.service \
-    /var/spool/cron/crontabs \
+    /etc/cron.d/smbstack \
     "$tmp_users_file"
 do
     if [ -e "$backup_item" ]; then
