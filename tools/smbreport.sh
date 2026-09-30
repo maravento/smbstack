@@ -8,7 +8,8 @@
 # DESCRIPTION:
 # Walks the shared folder once a day and writes a JSON report with three
 # tables: extensions, folders and largest files. The web panel reads that
-# file and paints the Report tab; it never walks the disk itself.
+# file and paints the Report tab; it never walks the disk itself. The recycle
+# bin is left out of the walk, as it is everywhere else in the project.
 #
 # The walk runs as root from cron, at 03:00, when no one is working. A web
 # request cannot do it: the scan takes minutes and PHP would cut it short.
@@ -21,8 +22,7 @@
 # OUTPUT:
 # /var/www/smbstack/web/smbreport.json
 #
-# LOG:
-# /var/log/smbstack.log
+# LOG: /var/log/smbstack.log (shared with the rest of the project)
 #
 ################################################################################
 
@@ -157,7 +157,10 @@ build_report() {
     report_tmp=$(mktemp)
     trap 'rm -f "$scan_list" "$report_tmp"' RETURN
 
-    find "$SHARED_PATH" -type f -printf '%s\t%p\n' 2>/dev/null > "$scan_list"
+    # .recycle is pruned, not filtered afterwards: its paths must never reach
+    # the report, which is the same rule smbshared.php and smbweb.conf apply
+    find "$SHARED_PATH" -name .recycle -prune -o -type f -printf '%s\t%p\n' \
+        2>/dev/null > "$scan_list"
     total_files=$(wc -l < "$scan_list")
     total_bytes=$(awk -F'\t' '{s+=$1} END{printf "%.0f", s+0}' "$scan_list")
 
@@ -207,7 +210,7 @@ build_report() {
     mv -f "$report_tmp" "$report_json"
     chown root:www-data "$report_json"
     chmod 640 "$report_json"
-    log "INFO: report written, $total_files file(s) in $SHARED_PATH"
+    log "INFO: report written, $total_files file(s) in $(basename "$SHARED_PATH")"
 }
 
 # Escape a value for a JSON string

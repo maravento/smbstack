@@ -1,7 +1,7 @@
 // SMBstack - Service Worker
-// Caches only the static app shell. Everything under /shared and /audit
-// (folder listings, file downloads, audit log data) must always be fetched
-// live so uploads, deletes, and audit entries are never served stale.
+// Caches only the static app shell. Everything under /shared, /audit and
+// /report (folder listings, file downloads, audit log data, the disk report)
+// must always be fetched live, so no view is ever served stale.
 // The container page is served from the network when online, falling back
 // to the cached copy only when offline.
 
@@ -27,7 +27,9 @@ self.addEventListener('fetch', (event) => {
     if (req.method !== 'GET') return;
 
     const url = new URL(req.url);
-    if (url.pathname.startsWith('/shared') || url.pathname.startsWith('/audit')) {
+    if (url.pathname.startsWith('/shared') ||
+        url.pathname.startsWith('/audit') ||
+        url.pathname.startsWith('/report')) {
         return;
     }
 

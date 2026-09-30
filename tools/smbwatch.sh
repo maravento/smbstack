@@ -18,17 +18,16 @@
 # panel are blocked at the share root), so after adding one, restart smbwatch
 # to include it.
 #
-# smbstack.env variables:
+# ENV:
 #  WATCH_LIMIT_GB  : size limit per monitored folder in GB (default: 10)
 #  WATCH_EXCLUDE   : comma-separated folder names to exclude from monitoring
 #                    e.g. WATCH_EXCLUDE="FINANCE,LEGAL"
 #
-# Log file:
-#  /var/log/smbwatch.log (root:root, 640)
-#  Rotated weekly via /etc/logrotate.d/smbwatch
+# USAGE:
+# ./smbwatch.sh {start|stop|status}
 #
-# Usage:
-#  ./smbwatch.sh {start|stop|status}
+# LOG: /var/log/smbwatch.log (root:root, 640)
+#      Rotated weekly via /etc/logrotate.d/smbwatch
 #
 ################################################################################
 
@@ -139,6 +138,20 @@ load_conf() {
 }
 load_conf "$smbstack_env"
 
+# wait for the mounted path
+wait_mounted_path() {
+    local target_path="$1" max_attempts="${2:-12}" attempt=1
+
+    while (( attempt <= max_attempts )); do
+        [ -d "$target_path" ] && return 0
+        log "INFO: waiting for $(basename "$target_path") ($attempt/$max_attempts)"
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+
+    return 1
+}
+
 set_env_var() {
     local env_key="$1" env_value="$2"
     local esc_val
@@ -178,7 +191,7 @@ handle_new_file() {
         chmod 775 "$dest_path"
 
         if [ -f "$new_file" ]; then
-            mv -f "$new_file" "$dest_path/$(basename "$new_file")"
+            mv -f --backup=numbered "$new_file" "$dest_path/$(basename "$new_file")"
             touch "$dest_path/$(basename "$new_file")"
             log "INFO: moved to recycle: $(basename "$new_file")"
         elif [ -d "$new_file" ] && [ -z "$(ls -A "$new_file")" ]; then
@@ -241,7 +254,7 @@ start() {
                 log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
                 break
             else
-                log "INFO: Enter a valid number between 1 and 10000"
+                log "INFO: enter a valid number between 1 and 10000 -- retry"
             fi
         done
     fi
@@ -264,11 +277,23 @@ start() {
     fi
     [ "$WATCH_EXCLUDE" = "NONE" ] && WATCH_EXCLUDE=""
 
+    if ! [[ "$WATCH_LIMIT_GB" =~ $UH_UINT ]] || [ "$WATCH_LIMIT_GB" -lt 1 ] || [ "$WATCH_LIMIT_GB" -gt 10000 ]; then
+        log "ERROR: invalid WATCH_LIMIT_GB in $(basename "$smbstack_env")"
+        log "ERROR: use an integer from 1 to 10000 -- abort"
+        exit 1
+    fi
+
     size_limit=$((WATCH_LIMIT_GB * 1024 * 1024 * 1024))
 
     # BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
-    if [ -z "${SHARED_PATH:-}" ] || [ ! -d "$SHARED_PATH" ]; then
-        log "ERROR: SHARED_PATH not set or does not exist -- abort"
+    if [ -z "${SHARED_PATH:-}" ]; then
+        log "ERROR: SHARED_PATH not set in $(basename "$smbstack_env") -- abort"
+        exit 1
+    fi
+
+    if ! wait_mounted_path "$SHARED_PATH"; then
+        log "ERROR: shared folder $(basename "$SHARED_PATH") not available"
+        log "ERROR: check the mount and start smbwatch again -- abort"
         exit 1
     fi
 
@@ -303,14 +328,16 @@ start() {
     log "INFO:   Recycle bin : .recycle/smbwatch (under shared path)"
     log "INFO:   Log         : $log_file"
 
-    # A file is handled on close_write, never on create: create fires the
-    # moment the transfer starts, so acting on it would measure the folder
-    # and move the file while it is still being written. A directory only
-    # ever fires create, and is recognized by the ISDIR flag.
-    inotifywait -m -r -e create -e close_write --format '%e|%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
+    # A file is handled on close_write or moved_to, never on create: create
+    # fires the moment the transfer starts, so acting on it would measure the
+    # folder and move the file while it is still being written. A file that
+    # arrives by rename fires only moved_to, so a file moved in from another
+    # folder would otherwise skip the limit. A directory only ever fires
+    # create, and is recognized by the ISDIR flag.
+    inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
         case "$event_name" in
             *ISDIR*)      [[ "$event_name" == CREATE* ]] || continue ;;
-            CLOSE_WRITE*) ;;
+            CLOSE_WRITE*|MOVED_TO*) ;;
             *)            continue ;;
         esac
         handle_new_file "$new_file"
@@ -349,6 +376,9 @@ stop() {
     else
         log "INFO: SMBwatch is not running"
     fi
+
+    cron_d_set "$script_path" ""
+    log "INFO: removed from cron @reboot"
 }
 
 # STATUS

@@ -6,6 +6,9 @@
 # smbstack - Samba with Shared Folder, Recycle Bin and Audit
 # https://github.com/maravento/smbstack
 #
+# LOG: smbsetup.log, in the directory this script is run from
+#      (rewritten on each run)
+#
 ################################################################################
 
 set -uo pipefail
@@ -74,7 +77,8 @@ detect_local_user() {
 }
 
 if ! local_user=$(detect_local_user); then
-    abort "no valid local user found, create one with sudo access -- abort"
+    err "no valid local user found"
+    abort "create one with sudo access -- abort"
 fi
 echo "Using local user: $local_user"
 
@@ -161,7 +165,7 @@ retry_cmd() {
         if [ "$attempt" -ge "$max_attempts" ]; then
             abort "command failed after $max_attempts attempts: $* -- abort"
         fi
-        warn "command failed (attempt $attempt/$max_attempts), retrying in 10s: $* -- retry"
+        info "attempt $attempt/$max_attempts: $* -- retry"
         attempt=$((attempt + 1))
         sleep 10
     done
@@ -177,7 +181,19 @@ check_conflicts() {
         fi
     done
     if [ "${#found[@]}" -gt 0 ]; then
-        abort "conflicting $role package(s) installed: ${found[*]}, remove them with apt purge -- abort"
+        for dep_pkg in "${found[@]}"; do
+            err "conflicting $role package: $dep_pkg"
+        done
+        abort "remove them with apt purge -- abort"
+    fi
+}
+
+# port in use
+check_port() {
+    local proto="$1" port="$2" role="$3"
+    if [ -n "$(ss -lnH "-${proto,,}" "sport = :$port" 2>/dev/null)" ]; then
+        err "${proto^^} port $port in use by another $role"
+        abort "stop that service before installing -- abort"
     fi
 }
 
@@ -191,7 +207,8 @@ check_repo() {
     done
     if [ "$missing_dir" -eq 1 ]; then
         echo ""
-        err "repository files not found, run: git clone https://github.com/maravento/smbstack -- abort"
+        err "repository files not found"
+        err "clone it from github.com/maravento/smbstack -- abort"
         echo ""
         exit 1
     fi
@@ -207,7 +224,8 @@ select_shared_folder() {
         read -p "Enter shared folder name [shared]: " folder_answer
         folder_answer="${folder_answer:-shared}"
         if [[ "$folder_answer" =~ [^a-zA-Z0-9_-] ]]; then
-            err "folder name can only contain letters, numbers, hyphens and underscores -- retry"
+            info "invalid folder name"
+            info "use letters, numbers, hyphens, underscores -- retry"
             folder_answer=""
         else
             break
@@ -343,7 +361,8 @@ check_already_installed() {
 
     if [ "$already_installed" -eq 1 ]; then
         echo ""
-        err "Samba is already installed, run sudo bash smbsetup.sh --update to update -- abort"
+        err "Samba is already installed"
+        err "update with: sudo bash smbsetup.sh --update -- abort"
         echo ""
         printf "%b" "$skip_reasons"
         echo ""
@@ -358,13 +377,16 @@ do_install() {
     check_conflicts "web server" nginx lighttpd caddy
     check_conflicts "SMB server" ksmbd-tools
     check_conflicts "syslog" syslog-ng
+    check_port tcp 3092 "web interface"
 
     if ! systemctl is-active --quiet apache2; then
-        abort "apache2 is not running, start it first with systemctl start apache2 -- abort"
+        err "apache2 is not running"
+        abort "start it with: systemctl start apache2 -- abort"
     fi
 
     if ! systemctl is-active --quiet rsyslog; then
-        abort "rsyslog is not running, start it first with systemctl start rsyslog -- abort"
+        err "rsyslog is not running"
+        abort "start it with: systemctl start rsyslog -- abort"
     fi
 
     # enable required apache modules
@@ -414,14 +436,13 @@ do_install() {
     mkdir -p "$smbstack_www/.size_cache"
     chown www-data:www-data "$smbstack_www/.size_cache"
     chmod 700 "$smbstack_www/.size_cache"
-    cp -f "$web_dir/index.php" "$smbstack_web/"
-    cp -f "$web_dir/smbaudit.html" "$smbstack_web/"
-    cp -f "$web_dir/smbapi.php" "$smbstack_web/"
-    cp -f "$web_dir/smbaudit-diagnostic.php" "$smbstack_web/"
-    cp -f "$web_dir/smbshared.php" "$smbstack_web/"
-    cp -f "$web_dir/manifest.json" "$smbstack_web/"
-    cp -f "$web_dir/sw.js" "$smbstack_web/"
-    cp -f "$web_dir/icon.svg" "$smbstack_web/"
+    # every file in web/ is application code, except the Apache vhost, which
+    # belongs in sites-available and would be served if left in the DocumentRoot
+    for web_file in "$web_dir"/*; do
+        [ -f "$web_file" ] || continue
+        [ "$(basename "$web_file")" = "smbweb.conf" ] && continue
+        cp -f "$web_file" "$smbstack_web/"
+    done
     chmod -R 755 "$smbstack_web"
     chown -R www-data:www-data "$smbstack_web"
 
@@ -498,9 +519,9 @@ EOF
                 read -p "Enter network interface [$default_iface]: " iface_answer
                 iface_answer="${iface_answer:-$default_iface}"
                 if [ -z "$iface_answer" ]; then
-                    err "interface cannot be empty -- retry"
+                    info "interface cannot be empty -- retry"
                 elif ! ip link show "$iface_answer" &>/dev/null; then
-                    err "interface $iface_answer not found -- retry"
+                    info "interface $iface_answer not found -- retry"
                     iface_answer=""
                 else
                     break
@@ -553,13 +574,14 @@ EOF
                     break
                     ;;
                 [Nn])
-                    warn "existing smb.conf kept as-is, the share and the full_audit/recycle VFS were not applied -- skip"
+                    warn "existing smb.conf kept as-is"
+                    warn "share, full_audit and recycle not applied -- alert"
                     echo "Add them manually, or re-run and choose 'y' to deploy the bundled smb.conf."
                     prompt_smb_net_iface
                     break
                     ;;
                 *)
-                    err "answer y or n -- retry"
+                    info "answer y or n -- retry"
                     ;;
             esac
         done
@@ -621,12 +643,12 @@ EOF
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         echo "Registering smbbk.sh monthly cron entry ..."
-        "$smbstack_tools/smbbk.sh" install || echo "WARNING: cron entry not registered -- alert"
+        "$smbstack_tools/smbbk.sh" install || warn "cron entry not registered -- alert"
     fi
 
     if [ -x "$smbstack_tools/smbreport.sh" ]; then
         echo "Registering smbreport.sh daily cron entry ..."
-        "$smbstack_tools/smbreport.sh" install || echo "WARNING: cron entry not registered -- alert"
+        "$smbstack_tools/smbreport.sh" install || warn "cron entry not registered -- alert"
     fi
 
     systemctl daemon-reload
@@ -634,7 +656,8 @@ EOF
     # detect server IP from SMB_IFACE
     detected_ip=$(ip -4 addr show "$iface_answer" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
     if ! [[ "$detected_ip" =~ $UH_IPV4 ]]; then
-        abort "cannot detect IPv4 address for interface $iface_answer -- abort"
+        err "no IPv4 address on $iface_answer"
+        abort "check the interface and run again -- abort"
     fi
     # Drop any prior Listen line for this port (a stale IP or a bare
     # "Listen 3092") before adding the current ones.
@@ -710,8 +733,10 @@ ENV
 
     echo ""
     echo "Audit log : /var/log/samba/log.audit"
-    echo "Audit web : http://localhost:3092/audit"
+    echo "Web panel : http://localhost:3092/"
     echo "Shared web : http://localhost:3092/shared"
+    echo "Audit web : http://localhost:3092/audit"
+    echo "Report web : http://localhost:3092/report"
     echo "Shared dir : $share_dir"
     echo "Tools dir : $smbstack_tools"
     echo "Env file : $smbstack_env"
@@ -740,33 +765,26 @@ do_update() {
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         echo "Creating backup with smbbk.sh ..."
-        "$smbstack_tools/smbbk.sh" || echo "WARNING: backup failed, continuing -- alert"
+        "$smbstack_tools/smbbk.sh" || warn "backup failed, continuing -- alert"
     else
-        echo "WARNING: smbbk.sh not found, no backup -- alert"
+        warn "smbbk.sh not found, no backup -- alert"
     fi
 
     echo ""
 
-    # index.php, manifest.json, sw.js, icon.svg: static, no placeholders,
-    # always (re)deployed -- heals installs from before these files were
-    # added to do_install's copy list
-    for base_name in index.php manifest.json sw.js icon.svg; do
-        if [ -f "$web_dir/$base_name" ]; then
-            cp -f "$web_dir/$base_name" "$smbstack_web/$base_name"
-            echo "Updated: $base_name"
-        fi
-    done
-
-    # web files (application code only - no user-customized config files)
+    # every file in web/ is application code and is always (re)deployed, which
+    # also heals installs from before a file was added. The Apache vhost is the
+    # only exception: it lives in sites-available, do_install wrote the network
+    # and the paths into it, and a copy would undo that.
     for source_file in "$web_dir"/*; do
         [ -f "$source_file" ] || continue
         base_name="$(basename "$source_file")"
         case "$base_name" in
-            smbaudit.html|smbapi.php|smbaudit-diagnostic.php|smbshared.php)
-                dest_path="$smbstack_web/$base_name"
+            smbweb.conf)
+                continue
                 ;;
             *)
-                continue
+                dest_path="$smbstack_web/$base_name"
                 ;;
         esac
         cp -f "$source_file" "$dest_path"
@@ -789,6 +807,20 @@ do_update() {
     chown www-data:www-data "$smbstack_www/.size_cache"
     chmod 700 "$smbstack_www/.size_cache"
 
+    # cron: rewrite the project's own entries, so an install from an earlier
+    # version picks up any change to a schedule or a command
+    cron_d_set "$SHARED_PATH/.recycle/" "@weekly root find \"$SHARED_PATH/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1"
+    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1"
+    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh"
+
+    # these two own their own schedule, so each one writes its own line
+    for cron_tool in smbbk.sh smbreport.sh; do
+        if [ -x "$smbstack_tools/$cron_tool" ]; then
+            "$smbstack_tools/$cron_tool" install || warn "cron entry not registered -- alert"
+        fi
+    done
+    echo "Updated: cron entries"
+
     systemctl daemon-reload
     systemctl restart smbd winbind rsyslog apache2
 
@@ -801,7 +833,7 @@ do_update() {
 # ------------------------------------------------------------------------------
 
 do_uninstall() {
-    warn "Run tools/smbbk.sh first if you want a backup."
+    info "Run tools/smbbk.sh first if you want a backup."
 
     # load samba username and shared path from env
     uninstall_shared_path=""
@@ -892,11 +924,11 @@ do_status() {
 
     echo ""
     echo "=== Apache Ports ==="
-    for check_port in 3092; do
-        if ss -tlnp | grep -qE ":${check_port}[[:space:]]"; then
-            echo ":$check_port OPEN"
+    for probe_port in 3092; do
+        if ss -tlnp | grep -qE ":${probe_port}[[:space:]]"; then
+            echo ":$probe_port OPEN"
         else
-            echo ":$check_port CLOSED"
+            echo ":$probe_port CLOSED"
         fi
     done
 
@@ -943,7 +975,7 @@ show_menu() {
             3) do_uninstall; break ;;
             4) do_status; break ;;
             5) exit 0 ;;
-            *) err "invalid option -- retry" ;;
+            *) info "invalid option -- retry" ;;
         esac
     done
 }

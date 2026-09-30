@@ -11,7 +11,7 @@
 # once WATCH_LIMIT_GB and WATCH_EXCLUDE exist in smbstack.env, which happens
 # after smbwatch.sh has been started interactively for the first time.
 #
-# log: /var/log/smbload.log (rewritten on each run)
+# LOG: /var/log/smbload.log (rewritten on each run)
 #
 ################################################################################
 
@@ -67,7 +67,7 @@ if pgrep -x smbd > /dev/null; then
 else
     systemctl stop smbd.service &>/dev/null
     if systemctl start smbd.service; then
-        log "FIX: smbd restarted"
+        log "INFO: smbd restarted -- fixed"
     else
         log "WARNING: smbd restart FAILED -- alert"
     fi
@@ -79,7 +79,7 @@ if pgrep -x winbindd > /dev/null; then
 else
     systemctl stop winbind.service &>/dev/null
     if systemctl start winbind.service; then
-        log "FIX: winbind restarted"
+        log "INFO: winbind restarted -- fixed"
     else
         log "WARNING: winbind restart FAILED -- alert"
     fi
@@ -133,16 +133,16 @@ WATCH_EXCLUDE=""
 load_conf "$smbstack_env"
 
 if [ -z "$WATCH_LIMIT_GB" ] || [ -z "$WATCH_EXCLUDE" ]; then
-    log "WARNING: WATCH_LIMIT_GB/WATCH_EXCLUDE not set -- skip"
+    log "WARNING: WATCH_LIMIT_GB/WATCH_EXCLUDE not set -- alert"
 elif ! [[ "$WATCH_LIMIT_GB" =~ $UH_UINT ]] || [ "$WATCH_LIMIT_GB" -lt 1 ] || [ "$WATCH_LIMIT_GB" -gt 10000 ]; then
-    log "WARNING: invalid WATCH_LIMIT_GB in $(basename "$smbstack_env") -- skip"
+    log "WARNING: invalid WATCH_LIMIT_GB in $(basename "$smbstack_env") -- alert"
 elif [ ! -x "$script_dir/smbwatch.sh" ]; then
-    log "WARNING: smbwatch.sh not found or not executable -- skip"
+    log "WARNING: smbwatch.sh not found or not executable -- alert"
 elif [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
     log "INFO: smbwatch ONLINE"
 else
     if "$script_dir/smbwatch.sh" start &>/dev/null; then
-        log "FIX: smbwatch restarted"
+        log "INFO: smbwatch restarted -- fixed"
     else
         log "WARNING: smbwatch restart FAILED -- alert"
     fi

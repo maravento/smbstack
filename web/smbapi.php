@@ -48,32 +48,32 @@ define('REPORT_FILE', '/var/www/smbstack/web/smbreport.json');
 
 class SambaLogReader {
     private $logFiles;
-    
+
     public function __construct($logFiles) {
         $this->logFiles = $logFiles;
     }
-    
+
     /**
      * Read log files and return parsed records
      */
     public function getLogs($limit = MAX_LINES) {
         $allLogs = [];
-        
+
         foreach ($this->logFiles as $logFile) {
             if (!file_exists($logFile)) {
                 continue;
             }
-            
+
             if (!is_readable($logFile)) {
                 error_log("Cannot read log file: $logFile");
                 continue;
             }
-            
+
             try {
                 $remaining = $limit - count($allLogs);
                 $fileLogs = $this->readSingleFile($logFile, $remaining);
                 $allLogs = array_merge($allLogs, $fileLogs);
-                
+
                 // Stop if we have enough logs
                 if (count($allLogs) >= $limit) {
                     break;
@@ -82,21 +82,21 @@ class SambaLogReader {
                 error_log("Error reading $logFile: " . $e->getMessage());
             }
         }
-        
+
         // Sort by timestamp (newest first)
         usort($allLogs, function($a, $b) {
             return strcmp($b['timestamp'], $a['timestamp']);
         });
-        
+
         return array_slice($allLogs, 0, $limit);
     }
-    
+
     /**
      * Read a single file (normal or compressed)
      */
     private function readSingleFile($filename, $limit = MAX_LINES) {
         $logs = [];
-        
+
         if (substr($filename, -3) === '.gz') {
             // Compressed file - gzip doesn't support seeking to the end, so
             // stream through it line by line but only keep a sliding window
@@ -126,10 +126,10 @@ class SambaLogReader {
             $file = new SplFileObject($filename);
             $file->seek(PHP_INT_MAX);
             $totalLines = $file->key();
-            
+
             $startLine = max(0, $totalLines - $limit);
             $file->seek($startLine);
-            
+
             while (!$file->eof() && count($logs) < $limit) {
                 $line = trim($file->current());
                 if (!empty($line)) {
@@ -141,18 +141,18 @@ class SambaLogReader {
                 $file->next();
             }
         }
-        
+
         return $logs;
     }
-    
+
     /**
      * Parse a Samba log line
      */
     private function parseLine($line) {
         // Format: 2025-11-24T09:25:38.103362-05:00 user smbd_audit: 192.168.0.42|foo|shared|unlinkat|ok|/path/file
-        
+
         $pattern = '/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+\S+\s+smbd_audit:\s+(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+)$/';
-        
+
         if (preg_match($pattern, $line, $matches)) {
             return [
                 'timestamp' => $matches[1],
@@ -164,7 +164,7 @@ class SambaLogReader {
                 'file' => trim($matches[7])
             ];
         }
-        
+
         return null;
     }
 }
@@ -173,11 +173,11 @@ class SambaLogReader {
 try {
     $action = $_GET['action'] ?? 'getLogs';
     $reader = new SambaLogReader(LOG_FILES);
-    
+
     if ($action === 'getLogs') {
         $limit = min((int)($_GET['limit'] ?? MAX_LINES), MAX_LINES);
         $logs = $reader->getLogs($limit);
-        
+
         echo json_encode([
             'success' => true,
             'data' => array_values($logs),
@@ -203,7 +203,7 @@ try {
     } else {
         throw new Exception("Invalid action");
     }
-    
+
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode([

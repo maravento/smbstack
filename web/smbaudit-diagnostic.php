@@ -80,7 +80,7 @@ $lineNumber = 0;
 while (!$file->eof()) {
     $lineNumber++;
     $line = trim($file->current());
-    
+
     if (empty($line)) {
         $emptyLines++;
     } elseif (preg_match($pattern, $line, $matches)) {
@@ -96,7 +96,7 @@ while (!$file->eof()) {
             ];
         }
     }
-    
+
     $file->next();
 }
 

@@ -202,7 +202,7 @@
         th:nth-child(2), td:nth-child(2) { width: 120px; }
         th:nth-child(3), td:nth-child(3) { width: 100px; }
         th:nth-child(4), td:nth-child(4) { width: 90px; }
-        th:nth-child(5), td:nth-child(5) { 
+        th:nth-child(5), td:nth-child(5) {
             min-width: 300px;
             max-width: none;
         }
@@ -408,7 +408,7 @@
                 grid-template-columns: repeat(4, 1fr);
             }
 
-            th:nth-child(5), td:nth-child(5) { 
+            th:nth-child(5), td:nth-child(5) {
                 min-width: 500px;
             }
         }
@@ -419,12 +419,12 @@
                 flex: 1 1 250px; /* Reduce search width */
                 min-width: 200px;
             }
-            
+
             .filters-row .btn {
                 flex: 0 1 auto;
                 min-width: 110px; /* Slightly more compact buttons */
             }
-            
+
             .refresh-controls {
                 flex: 0 1 auto;
             }
@@ -468,7 +468,7 @@
             </select>
             <span style="margin-left: 0.25rem; color: #475569; font-size: 0.9rem;">min</span>
         </div>
-            
+
             <div id="advancedFilters" style="margin-top: 1rem;">
                 <div class="filters-grid">
                     <div class="form-group">
@@ -520,17 +520,17 @@
             <div class="pagination-info" id="paginationInfo">
                 Showing 0-0 of 0 records
             </div>
-            
+
             <div class="page-numbers">
                 <button class="page-btn" id="firstPage" onclick="goToPage(1)" disabled>«</button>
                 <button class="page-btn" id="prevPage" onclick="previousPage()" disabled>‹</button>
-                
+
                 <div id="pageNumbers"></div>
-                
+
                 <button class="page-btn" id="nextPage" onclick="nextPage()" disabled>›</button>
                 <button class="page-btn" id="lastPage" onclick="goToPage(totalPages)" disabled>»</button>
             </div>
-            
+
             <div class="page-size-selector">
                 <label>Show:</label>
                 <select id="pageSize" onchange="changePageSize()">
@@ -601,7 +601,7 @@
                 countdownSeconds = Math.floor(refreshTime / 1000);
                 updateCountdownDisplay();
                 document.getElementById('countdownTimer').style.display = 'inline-block';
-                
+
                 countdownInterval = setInterval(() => {
                     countdownSeconds--;
                     if (countdownSeconds < 0) {
@@ -637,7 +637,7 @@
         function updateRefreshInterval() {
             const select = document.getElementById('refreshInterval');
             refreshTime = parseInt(select.value);
-            
+
             if (autoRefreshActive && refreshTime > 0) {
                 startAutoRefresh();
             } else if (refreshTime === 0) {
@@ -652,7 +652,7 @@
         function updateRefreshButton(isActive) {
             const btn = document.getElementById('autoRefreshBtn');
             if (!btn) return;
-            
+
             if (isActive && refreshTime > 0) {
                 btn.textContent = '🔄 Auto Refresh ON';
                 btn.classList.remove('btn-secondary');
@@ -663,35 +663,35 @@
                 btn.classList.add('btn-secondary');
             }
         }
-        
+
         function updateCountdownDisplay() {
             const timerEl = document.getElementById('countdownTimer');
             if (!timerEl) return;
-            
+
             const minutes = Math.floor(countdownSeconds / 60);
             const seconds = countdownSeconds % 60;
-            
+
             if (minutes > 0) {
                 timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
             } else {
                 timerEl.textContent = `${seconds}s`;
             }
-        }      
+        }
 
         async function loadLogs() {
             const tbody = document.getElementById('logsTable');
-            
+
             try {
                 tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading records...</td></tr>';
 
                 const response = await fetch('/audit/smbapi.php?action=getLogs&limit=50000');
-                
+
                 if (!response.ok) {
                     throw new Error('Failed to load logs');
                 }
-                
+
                 const result = await response.json();
-                
+
                 if (result.success) {
                     allLogs = result.data.sort((a, b) => {
                         const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
@@ -699,16 +699,16 @@
                         return tb - ta;
                     });
                     filteredLogs = [...allLogs];
-                    
+
                     document.getElementById('recordsCount').textContent = allLogs.length;
                     document.getElementById('recordsCounter').classList.remove('hidden');
                     document.getElementById('filtersSection').classList.remove('hidden');
-                    
+
                     goToPage(1);
                 } else {
                     throw new Error(result.error);
                 }
-                
+
             } catch (error) {
                 console.error('Error:', error);
                 tbody.innerHTML = '<tr><td colspan="5" class="no-data">Failed to load logs: ' + esc(error.message) + '</td></tr>';
@@ -718,7 +718,7 @@
         function toggleAdvancedFilters() {
             const advFilters = document.getElementById('advancedFilters');
             const btn = document.getElementById('advancedFilterBtn');
-            
+
             if (advFilters.classList.contains('hidden')) {
                 advFilters.classList.remove('hidden');
                 btn.textContent = '⚙️ Hide Advanced Filters';
@@ -758,10 +758,10 @@
             });
 
             document.getElementById('recordsCount').textContent = filteredLogs.length;
-            
+
             goToPage(1);
         }
-        
+
         function clearFilters() {
             document.getElementById('searchText').value = '';
             document.getElementById('dateFrom').value = '';
@@ -812,7 +812,7 @@
         function getActionClass(action) {
             const classes = {
                 'mkdirat': 'badge-blue',
-                'renameat': 'badge-yellow', 
+                'renameat': 'badge-yellow',
                 'unlinkat': 'badge-red',
                 'pwrite': 'badge-green'
             };
@@ -847,44 +847,42 @@
         function updatePagination() {
             const startIndex = filteredLogs.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
             const endIndex = Math.min(currentPage * pageSize, filteredLogs.length);
-            
-            document.getElementById('paginationInfo').textContent = 
+
+            document.getElementById('paginationInfo').textContent =
                 filteredLogs.length === 0
                     ? 'Showing 0 of 0 records'
                     : `Showing ${startIndex}-${endIndex} of ${filteredLogs.length} records`;
-            
+
             document.getElementById('firstPage').disabled = currentPage === 1;
             document.getElementById('prevPage').disabled = currentPage === 1;
             document.getElementById('nextPage').disabled = currentPage === totalPages;
             document.getElementById('lastPage').disabled = currentPage === totalPages;
-            
+
             if (totalPages > 1) {
                 document.getElementById('paginationSection').classList.remove('hidden');
             } else {
                 document.getElementById('paginationSection').classList.add('hidden');
             }
-            
+
             const pageNumbersContainer = document.getElementById('pageNumbers');
             let pageNumbersHTML = '';
-            
+
             const startPage = Math.max(1, currentPage - 2);
             const endPage = Math.min(totalPages, currentPage + 2);
-            
+
             for (let i = startPage; i <= endPage; i++) {
                 pageNumbersHTML += `
-                    <button class="page-btn ${i === currentPage ? 'active' : ''}" 
+                    <button class="page-btn ${i === currentPage ? 'active' : ''}"
                             onclick="goToPage(${i})">
                         ${i}
                     </button>
                 `;
             }
-            
+
             pageNumbersContainer.innerHTML = pageNumbersHTML;
         }
 
         function exportPDF() {
-
-            // helper: escape HTML in file paths
             if (filteredLogs.length === 0) {
                 alert('No records to export');
                 return;
