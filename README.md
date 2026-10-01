@@ -38,12 +38,12 @@
 - `inotify-tools`, `procps`, `coreutils`, `findutils`, `cron`, `util-linux`, `sed`, `grep` (checked by `tools/smbwatch.sh`)
 - `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd` (checked by `tools/smbload.sh`)
 - `zip`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbbk.sh`)
+- `findutils`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbreport.sh`)
 
 ```bash
 apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
     acl openssl cron iproute2 sudo systemd util-linux sed grep inotify-tools \
     procps coreutils findutils zip
-apt-get install -y --reinstall apache2-doc
 ```
 
 The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbsetup.sh` itself.
@@ -308,6 +308,7 @@ smbstack/
 
 /var/log/smbwatch.log           # smbwatch.sh runtime log (root:root, 640)
 /var/log/smbload.log            # smbload.sh runtime log
+/var/log/smbstack.log           # smbbk.sh and smbreport.sh runtime log, shared
 
 /home/$local_user/shared/       # Shared folder (independent of the installer)
 ├── .recycle/                   # Recycle Bin (smbguest/, www-data/, smbwatch/)
@@ -829,9 +830,9 @@ sudo crontab -e
 */5 * * * * /var/www/smbstack/tools/smbload.sh
 ```
 
-> the smbwatch check is inert until `WATCH_LIMIT_GB` and `WATCH_EXCLUDE` exist and are valid in `smbstack.env`, which happens the first time `smbwatch.sh start` is run from a terminal and its questions are answered. Until then `smbload.sh` logs a `-- alert` warning and does not launch it.
+> `smbload.sh` reads no configuration of its own. It only checks whether the watcher is running and calls `smbwatch.sh start` if it is not. Until `smbwatch.sh install` has been run from a terminal, that call aborts on its own key check, so `smbload.sh` logs a `-- alert` warning pointing at `smbwatch.log`, where the missing or invalid key is named.
 
-> la vigilancia de smbwatch permanece inactiva hasta que `WATCH_LIMIT_GB` y `WATCH_EXCLUDE` existan y sean válidas en `smbstack.env`, lo que ocurre la primera vez que se ejecuta `smbwatch.sh start` desde un terminal y se responden sus preguntas. Hasta entonces `smbload.sh` registra un aviso `-- alert` y no lo lanza.
+> `smbload.sh` no lee configuración propia. Solo comprueba si el vigilante corre y llama a `smbwatch.sh start` si no. Hasta que se haya ejecutado `smbwatch.sh install` desde un terminal, esa llamada aborta en su propia verificación de claves, así que `smbload.sh` registra un aviso `-- alert` que apunta a `smbwatch.log`, donde se nombra la clave que falta o es inválida.
 
 ### smbwatch
 
@@ -840,12 +841,16 @@ sudo crontab -e
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbwatch.sh</code> monitors the first-level subfolders of the shared folder in real time, using <code>inotifywait</code>.</p>
       <p>When a subfolder exceeds the configured size limit, the file that triggers the event is moved to <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code>. This is its own recycle channel, independent of <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code>. See the <i>Recycle bin channels</i> section.</p>
-      <p><code>smbwatch.sh</code> is managed independently of the installer. It reads its configuration from <code>smbstack.env</code> and asks for any missing value, which requires an interactive terminal. If a value is missing and no terminal is available, for example when run through cron, the script aborts instead of waiting for an answer.</p>
+      <p><code>smbwatch.sh</code> is managed independently of the installer, through five actions: <code>install</code>, <code>uninstall</code>, <code>start</code>, <code>stop</code> and <code>status</code>.</p>
+      <p><code>install</code> is the only one that writes to <code>smbstack.env</code>. It asks for the two values, registers the <code>@reboot</code> cron entry and starts the watcher, so it requires an interactive terminal and is run once. <code>uninstall</code> undoes all three.</p>
+      <p><code>start</code> never writes: it validates the keys and launches the watcher. If a key is missing or invalid it aborts, naming each failure and telling the operator to run <code>install</code> first. This is the action cron runs on every boot, and the one <code>smbload.sh</code> uses to restart a stopped watcher.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbwatch.sh</code> monitorea en tiempo real las subcarpetas de primer nivel de la carpeta compartida mediante <code>inotifywait</code>.</p>
       <p>Cuando una subcarpeta supera el límite de tamaño configurado, el archivo que genera el evento se mueve a <code>.recycle/smbwatch/&lt;AAAAMMDD&gt;/</code>. Este es su propio canal de reciclaje, independiente de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code>. Consulta la sección <i>Recycle bin channels</i>.</p>
-      <p><code>smbwatch.sh</code> se administra de forma independiente del instalador. Lee su configuración de <code>smbstack.env</code> y solicita cualquier valor que falte, lo que requiere una terminal interactiva. Si falta un valor y no hay una terminal disponible, por ejemplo cuando se ejecuta mediante cron, el script aborta en lugar de quedar esperando una respuesta.</p>
+      <p><code>smbwatch.sh</code> se administra de forma independiente del instalador, mediante cinco acciones: <code>install</code>, <code>uninstall</code>, <code>start</code>, <code>stop</code> y <code>status</code>.</p>
+      <p><code>install</code> es la única que escribe en <code>smbstack.env</code>. Pregunta los dos valores, registra la entrada <code>@reboot</code> en cron y arranca el vigilante, así que requiere una terminal interactiva y se ejecuta una sola vez. <code>uninstall</code> deshace las tres cosas.</p>
+      <p><code>start</code> nunca escribe: valida las claves y lanza el vigilante. Si falta una clave o es inválida, aborta nombrando cada fallo e indicando que se ejecute <code>install</code> primero. Esta es la acción que cron ejecuta en cada arranque, y la que usa <code>smbload.sh</code> para reiniciar un vigilante detenido.</p>
     </td>
   </tr>
 </table>
@@ -860,6 +865,10 @@ sudo crontab -e
 > un archivo genera el evento al terminar de escribirse, y también al llegar por un movimiento o un renombrado. Así, un archivo movido desde una carpeta excluida no puede evadir el límite. Como efecto secundario, renombrar un archivo dentro de una carpeta que ya supera el límite envía ese archivo a la papelera. El movimiento de una carpeta completa no se monitorea.
 
 ```bash
+# Install (interactive: asks for the two keys, writes them, adds the @reboot
+# cron entry and starts the watcher). Run this once, from a terminal.
+sudo /var/www/smbstack/tools/smbwatch.sh install
+
 # Start
 sudo /var/www/smbstack/tools/smbwatch.sh start
 
@@ -868,6 +877,27 @@ sudo /var/www/smbstack/tools/smbwatch.sh stop
 
 # Status
 sudo /var/www/smbstack/tools/smbwatch.sh status
+
+# Uninstall (stops it, removes the cron entry and both keys)
+sudo /var/www/smbstack/tools/smbwatch.sh uninstall
+```
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p><code>start</code> on a host where <code>install</code> was never run reports every missing key and then aborts, naming the action to run. It collects all the failures first, so one pass is enough to fix them:</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p><code>start</code> en un host donde nunca se ejecutó <code>install</code> informa cada clave que falta y luego aborta, nombrando la acción que debe ejecutarse. Recoge todos los fallos primero, así una sola pasada basta para corregirlos:</p>
+    </td>
+  </tr>
+</table>
+
+```text
+ERROR: WATCH_LIMIT_GB missing line
+ERROR: WATCH_EXCLUDE missing line
+ERROR: 2 key(s) invalid in smbstack.env
+ERROR: run 'smbwatch.sh install' first -- abort
 ```
 
 <table>

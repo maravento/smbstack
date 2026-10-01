@@ -19,6 +19,9 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+        try { if (localStorage.getItem('smbstack_theme') === 'dark') { document.documentElement.classList.add('dark'); } } catch (e) {}
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SMBstack</title>
@@ -37,16 +40,16 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             transition: background .2s;
         }
 
-        body.dark { background: #0b0f16; }
-        body.dark .header { background: #141721; }
-        body.dark .header-top { border-bottom-color: rgba(255,255,255,0.05); }
-        body.dark .header-date { background: rgba(255,255,255,0.05); color: #e2e8f0; }
-        body.dark .tabs { background: #0f1117; }
-        body.dark .tab { color: #607d8b; }
-        body.dark .tab:hover { color: #cbd5e0; background: rgba(255,255,255,0.03); }
-        body.dark .tab.active { background: rgba(246,173,85,0.06); }
-        body.dark .btn-theme { background: #232838; color: #e2e8f0; }
-        body.dark .btn-theme:hover { background: #2d3748; }
+        html.dark { background: #0b0f16; }
+        html.dark .header { background: #141721; }
+        html.dark .header-top { border-bottom-color: rgba(255,255,255,0.05); }
+        html.dark .header-date { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+        html.dark .tabs { background: #0f1117; }
+        html.dark .tab { color: #607d8b; }
+        html.dark .tab:hover { color: #cbd5e0; background: rgba(255,255,255,0.03); }
+        html.dark .tab.active { background: rgba(246,173,85,0.06); }
+        html.dark .btn-theme { background: #232838; color: #e2e8f0; }
+        html.dark .btn-theme:hover { background: #2d3748; }
 
         .btn-theme {
             background: rgba(255,255,255,0.08);
@@ -193,13 +196,13 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
         </div>
     </div>
     <div class="tabs">
-        <a class="tab <?= $tab === 'shared' ? 'active' : '' ?>" href="?tab=shared">
+        <a class="tab <?= $tab === 'shared' ? 'active' : '' ?>" href="?tab=shared" <?= $tab === 'shared' ? 'aria-current="page"' : '' ?>>
             <span class="tab-icon">📁</span> Shared
         </a>
-        <a class="tab <?= $tab === 'audit' ? 'active' : '' ?>" href="?tab=audit">
+        <a class="tab <?= $tab === 'audit' ? 'active' : '' ?>" href="?tab=audit" <?= $tab === 'audit' ? 'aria-current="page"' : '' ?>>
             <span class="tab-icon">📊</span> Audit
         </a>
-        <a class="tab <?= $tab === 'report' ? 'active' : '' ?>" href="?tab=report">
+        <a class="tab <?= $tab === 'report' ? 'active' : '' ?>" href="?tab=report" <?= $tab === 'report' ? 'aria-current="page"' : '' ?>>
             <span class="tab-icon">💾</span> Report
         </a>
     </div>
@@ -207,11 +210,11 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 
 <div class="frame-container">
     <?php if ($tab === 'shared'): ?>
-        <iframe src="/shared/" id="frame-shared"></iframe>
+        <iframe src="/shared/" id="frame-shared" onload="syncFrameTheme(this)"></iframe>
     <?php elseif ($tab === 'report'): ?>
-        <iframe src="/report/" id="frame-report"></iframe>
+        <iframe src="/report/" id="frame-report" onload="syncFrameTheme(this)"></iframe>
     <?php else: ?>
-        <iframe src="/audit/" id="frame-audit"></iframe>
+        <iframe src="/audit/" id="frame-audit" onload="syncFrameTheme(this)"></iframe>
     <?php endif; ?>
 </div>
 
@@ -234,17 +237,21 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
     }
 
     function toggleTheme() {
-        var dark = document.body.classList.toggle('dark');
+        var dark = document.documentElement.classList.toggle('dark');
         document.getElementById('btnTheme').textContent = dark ? '☀️' : '🌙';
         try { localStorage.setItem('smbstack_theme', dark ? 'dark' : 'light'); } catch (e) {}
         broadcastTheme(dark);
     }
 
+    function syncFrameTheme(iframe) {
+        var dark = document.documentElement.classList.contains('dark');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ smbstackTheme: dark ? 'dark' : 'light' }, window.location.origin);
+        }
+    }
+
     function initTheme() {
-        var saved = '';
-        try { saved = localStorage.getItem('smbstack_theme') || ''; } catch (e) {}
-        if (saved === 'dark') {
-            document.body.classList.add('dark');
+        if (document.documentElement.classList.contains('dark')) {
             document.getElementById('btnTheme').textContent = '☀️';
         }
     }
