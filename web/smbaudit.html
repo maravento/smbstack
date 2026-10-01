@@ -6,6 +6,27 @@
     <title>SMBstack — Audit Viewer</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" type="image/svg+xml">
     <style>
+        :root {
+            /* Typography scale */
+            --fs-xxs: 0.75rem;
+            --fs-xs: 0.8rem;
+            --fs-sm: 0.85rem;
+            --fs-base: 0.9rem;
+            --fs-md: 0.95rem;
+            --fs-lg: 1rem;
+            --fs-xl: 1.1rem;
+            --fs-xl-desktop: 1.25rem;
+            /* Spacing scale */
+            --sp-1: 0.25rem;
+            --sp-2: 0.5rem;
+            --sp-3: 0.75rem;
+            --sp-4: 1rem;
+            --sp-5: 1.25rem;
+            --sp-6: 1.5rem;
+            --sp-8: 2rem;
+            --sp-10: 3rem;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -52,7 +73,7 @@
 
         .header {
             background: #2c3e50;
-            padding: 0.75rem 1rem;
+            padding: var(--sp-3) var(--sp-4);
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             display: flex;
             justify-content: center;
@@ -62,15 +83,15 @@
         .header-left {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: var(--sp-3);
             justify-self: start;
-            margin-bottom: 0.5rem;
+            margin-bottom: var(--sp-2);
         }
 
         .header h1 {
             color: white;
             margin: 0;
-            font-size: 1.1rem;
+            font-size: var(--fs-xl);
             font-weight: 600;
         }
 
@@ -80,32 +101,32 @@
 
         .header-date {
             color: white;
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             font-weight: 500;
         }
 
         .header-records {
             color: #a0aec0;
-            font-size: 0.75rem;
-            margin-top: 0.25rem;
+            font-size: var(--fs-xxs);
+            margin-top: var(--sp-1);
         }
 
         .records-counter {
             background: white;
-            padding: 0.5rem 1rem;
-            margin: 1rem;
+            padding: var(--sp-2) var(--sp-4);
+            margin: var(--sp-4);
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             text-align: center;
             font-weight: 600;
             color: #475569;
-            font-size: 0.95rem;
+            font-size: var(--fs-md);
         }
 
         .filters {
             background: white;
-            padding: 1rem;
-            margin: 1rem;
+            padding: var(--sp-4);
+            margin: var(--sp-4);
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
@@ -113,17 +134,17 @@
         .filters-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.5rem;
+            gap: var(--sp-2);
             align-items: center;
         }
 
         .filters-row .form-input {
             flex: 1 1 100%;
             min-width: 200px;
-            padding: 0.65rem;
+            padding: var(--sp-3);
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            font-size: 0.95rem;
+            font-size: var(--fs-md);
         }
 
         .filters-row .btn,
@@ -139,27 +160,27 @@
         .filters-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 1rem;
-            margin-top: 1rem;
+            gap: var(--sp-4);
+            margin-top: var(--sp-4);
         }
 
         .form-group {
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: var(--sp-2);
         }
 
         .form-label {
             font-weight: 500;
             color: #475569;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
         }
 
         .form-input, .form-select {
-            padding: 0.5rem;
+            padding: var(--sp-2);
             border: 1px solid #cbd5e1;
             border-radius: 6px;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
         }
 
         .table-container {
@@ -167,7 +188,7 @@
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             overflow-x: auto;
-            margin: 1rem;
+            margin: var(--sp-4);
             -webkit-overflow-scrolling: touch;
         }
 
@@ -179,7 +200,7 @@
         }
 
         th, td {
-            padding: 0.75rem 0.5rem;
+            padding: var(--sp-3) var(--sp-2);
             border-bottom: 1px solid #e2e8f0;
         }
 
@@ -188,14 +209,14 @@
             text-align: left;
             font-weight: 600;
             color: #475569;
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             position: sticky;
             top: 0;
             z-index: 10;
         }
 
         td {
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
         }
 
         th:nth-child(1), td:nth-child(1) { width: 180px; }
@@ -212,9 +233,9 @@
         }
 
         .badge {
-            padding: 0.25rem 0.75rem;
+            padding: var(--sp-1) var(--sp-3);
             border-radius: 20px;
-            font-size: 0.8rem;
+            font-size: var(--fs-xs);
             font-weight: 500;
         }
 
@@ -226,13 +247,13 @@
 
         .no-data {
             text-align: center;
-            padding: 3rem;
+            padding: var(--sp-10);
             color: #64748b;
         }
 
         .loading {
             text-align: center;
-            padding: 2rem;
+            padding: var(--sp-8);
             color: #64748b;
         }
 
@@ -241,13 +262,13 @@
         }
 
         .btn {
-            padding: 0.5rem 1rem;
+            padding: var(--sp-2) var(--sp-4);
             background: #2563eb;
             color: white;
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
             white-space: nowrap;
         }
 
@@ -284,22 +305,22 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            gap: 1rem;
-            padding: 1rem;
+            gap: var(--sp-4);
+            padding: var(--sp-4);
             background: white;
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin: 1rem;
+            margin: var(--sp-4);
         }
 
         .pagination-info {
             color: #64748b;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
             text-align: center;
         }
 
         .page-btn {
-            padding: 0.5rem 1rem;
+            padding: var(--sp-2) var(--sp-4);
             border: 1px solid #cbd5e1;
             background: white;
             border-radius: 6px;
@@ -323,7 +344,7 @@
 
         .page-numbers {
             display: flex;
-            gap: 0.5rem;
+            gap: var(--sp-2);
             flex-wrap: wrap;
             justify-content: center;
         }
@@ -331,11 +352,11 @@
         .page-size-selector {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: var(--sp-2);
         }
 
         .page-size-selector select {
-            padding: 0.25rem 0.5rem;
+            padding: var(--sp-1) var(--sp-2);
             border: 1px solid #cbd5e1;
             border-radius: 4px;
         }
@@ -343,11 +364,11 @@
         /* Countdown timer styles */
         .countdown-timer {
             display: inline-block;
-            margin-left: 0.5rem;
-            padding: 0.25rem 0.5rem;
+            margin-left: var(--sp-2);
+            padding: var(--sp-1) var(--sp-2);
             background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             font-weight: 600;
             min-width: 35px;
             text-align: center;
@@ -356,23 +377,23 @@
         /* MEDIA QUERIES FOR TABLET AND DESKTOP */
         @media (min-width: 768px) {
             .header {
-                padding: 0.75rem 2rem;
+                padding: var(--sp-3) var(--sp-8);
                 display: flex;
                 justify-content: center;
                 align-items: center;
             }
 
             .header h1 {
-                font-size: 1.25rem;
+                font-size: var(--fs-xl-desktop);
             }
 
             .records-counter {
-                margin: 1rem 1.5rem 0 1.5rem;
+                margin: var(--sp-4) var(--sp-6) 0 var(--sp-6);
             }
 
             .filters {
-                padding: 1.5rem 2rem;
-                margin: 1rem 1.5rem 1.5rem 1.5rem;
+                padding: var(--sp-6) var(--sp-8);
+                margin: var(--sp-4) var(--sp-6) var(--sp-6) var(--sp-6);
             }
 
             .filters-row .form-input {
@@ -389,13 +410,13 @@
             }
 
             .table-container {
-                margin: 0 1.5rem 1.5rem 1.5rem;
+                margin: 0 var(--sp-6) var(--sp-6) var(--sp-6);
             }
 
             .pagination {
                 flex-direction: row;
                 justify-content: space-between;
-                margin: 1.5rem;
+                margin: var(--sp-6);
             }
 
             .pagination-info {
@@ -466,10 +487,10 @@
                 <option value="1800000">30</option>
                 <option value="0">Off</option>
             </select>
-            <span style="margin-left: 0.25rem; color: #475569; font-size: 0.9rem;">min</span>
+            <span style="margin-left: var(--sp-1); color: #475569; font-size: var(--fs-base);">min</span>
         </div>
 
-            <div id="advancedFilters" style="margin-top: 1rem;">
+            <div id="advancedFilters" style="margin-top: var(--sp-4);">
                 <div class="filters-grid">
                     <div class="form-group">
                         <label class="form-label">📅 Date From</label>

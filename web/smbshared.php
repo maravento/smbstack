@@ -432,6 +432,25 @@ if ($total_size === null) {
     <title>SMBstack — Shared Folder</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📁</text></svg>" type="image/svg+xml">
     <style>
+        :root {
+            /* Typography scale */
+            --fs-xxs: 0.75rem;
+            --fs-xs: 0.8rem;
+            --fs-sm: 0.85rem;
+            --fs-base: 0.9rem;
+            --fs-md: 0.95rem;
+            --fs-lg: 1rem;
+            --fs-xl: 1.1rem;
+            /* Spacing scale */
+            --sp-1: 0.25rem;
+            --sp-2: 0.5rem;
+            --sp-3: 0.75rem;
+            --sp-4: 1rem;
+            --sp-5: 1.25rem;
+            --sp-6: 1.5rem;
+            --sp-8: 2rem;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
@@ -443,16 +462,16 @@ if ($total_size === null) {
 
         .header {
             background: #2c3e50;
-            padding: 0.75rem 1rem;
+            padding: var(--sp-3) var(--sp-4);
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 0.5rem;
+            gap: var(--sp-2);
         }
 
-        .header h1 { color: white; font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin: 0 auto; }
+        .header h1 { color: white; font-size: var(--fs-xl); font-weight: 600; display: flex; align-items: center; gap: var(--sp-2); margin: 0 auto; }
         .header-meta { display: none; }
 
         /* ── Dark mode ────────────────────────────────────────────────── */
@@ -486,38 +505,38 @@ if ($total_size === null) {
 
         .stats-bar {
             background: white;
-            margin: 1rem;
+            margin: var(--sp-4);
             border-radius: 8px;
-            padding: 0.75rem 1rem;
+            padding: var(--sp-3) var(--sp-4);
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 0.5rem;
+            gap: var(--sp-2);
         }
 
-        .stats-info { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.85rem; color: #475569; }
-        .stats-info span { display: flex; align-items: center; gap: 0.3rem; }
+        .stats-info { display: flex; gap: var(--sp-6); flex-wrap: wrap; font-size: var(--fs-sm); color: #475569; }
+        .stats-info span { display: flex; align-items: center; gap: var(--sp-1); }
 
         .toolbar {
             display: flex;
-            gap: 0.5rem;
+            gap: var(--sp-2);
             flex-wrap: wrap;
         }
 
         .btn {
-            padding: 0.45rem 0.9rem;
+            padding: var(--sp-2) var(--sp-3);
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             font-weight: 500;
             white-space: nowrap;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 0.3rem;
+            gap: var(--sp-1);
             transition: background 0.15s;
         }
 
@@ -534,14 +553,14 @@ if ($total_size === null) {
 
         .breadcrumb {
             background: white;
-            margin: 0 1rem 1rem;
+            margin: 0 var(--sp-4) var(--sp-4);
             border-radius: 8px;
-            padding: 0.6rem 1rem;
+            padding: var(--sp-2) var(--sp-4);
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             display: flex;
             align-items: center;
-            gap: 0.3rem;
+            gap: var(--sp-1);
             flex-wrap: wrap;
             color: #64748b;
         }
@@ -552,10 +571,10 @@ if ($total_size === null) {
         .breadcrumb .current { color: #1e293b; font-weight: 500; }
 
         .alert {
-            margin: 0 1rem 1rem;
-            padding: 0.75rem 1rem;
+            margin: 0 var(--sp-4) var(--sp-4);
+            padding: var(--sp-3) var(--sp-4);
             border-radius: 8px;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
         }
         .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
         .alert-error   { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
@@ -563,30 +582,30 @@ if ($total_size === null) {
 
         .mkdir-area {
             display: none;
-            padding: 0.75rem 1rem;
+            padding: var(--sp-3) var(--sp-4);
             background: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
         }
         .mkdir-area.open { display: block; }
-        .mkdir-area form { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+        .mkdir-area form { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
         .upload-area {
             background: white;
-            margin: 0 1rem 1rem;
+            margin: 0 var(--sp-4) var(--sp-4);
             border-radius: 8px;
-            padding: 1rem;
+            padding: var(--sp-4);
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             display: none;
         }
         .upload-area.open { display: block; }
-        .upload-area form { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-        .upload-area input[type=file] { flex: 1; font-size: 0.85rem; }
+        .upload-area form { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+        .upload-area input[type=file] { flex: 1; font-size: var(--fs-sm); }
 
         .table-container {
             background: white;
             border-radius: 12px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             overflow-x: auto;
-            margin: 0 1rem 1rem;
+            margin: 0 var(--sp-4) var(--sp-4);
         }
 
         table { width: 100%; border-collapse: collapse; min-width: 600px; }
@@ -596,18 +615,18 @@ if ($total_size === null) {
             text-align: left;
             font-weight: 600;
             color: #475569;
-            font-size: 0.85rem;
-            padding: 0.75rem 1rem;
+            font-size: var(--fs-sm);
+            padding: var(--sp-3) var(--sp-4);
             border-bottom: 1px solid #e2e8f0;
             position: sticky;
             top: 0;
         }
 
-        td { padding: 0.65rem 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; vertical-align: middle; }
+        td { padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid #e2e8f0; font-size: var(--fs-sm); vertical-align: middle; }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background: #f8fafc; }
 
-        .name-cell { display: flex; align-items: center; gap: 0.5rem; }
+        .name-cell { display: flex; align-items: center; gap: var(--sp-2); }
         .name-cell a { color: #1e293b; text-decoration: none; }
         .name-cell a:hover { color: #2563eb; }
         .dir-link { color: #374151 !important; font-weight: 500; }
@@ -615,11 +634,11 @@ if ($total_size === null) {
 
         .muted { color: #47556a; }
 
-        .action-cell { display: flex; gap: 0.4rem; }
+        .action-cell { display: flex; gap: var(--sp-2); }
 
-        .no-data { text-align: center; padding: 3rem; color: #64748b; font-size: 0.95rem; }
+        .no-data { text-align: center; padding: var(--sp-8); color: #64748b; font-size: var(--fs-md); }
 
-        footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #94a3b8; }
+        footer { text-align: center; padding: var(--sp-6); font-size: var(--fs-xs); color: #94a3b8; }
         footer a { color: #94a3b8; text-decoration: none; }
         footer a:hover { color: #2563eb; }
 
@@ -631,7 +650,7 @@ if ($total_size === null) {
             z-index: 1000;
             align-items: center;
             justify-content: center;
-            padding: 2rem;
+            padding: var(--sp-8);
         }
         .preview-modal.open { display: flex; }
         .preview-modal-inner {
@@ -640,7 +659,7 @@ if ($total_size === null) {
             max-height: 90vh;
             background: white;
             border-radius: 8px;
-            padding: 1rem;
+            padding: var(--sp-4);
         }
         body.dark .preview-modal-inner { background: #141721; }
         .preview-modal-inner img { display: block; max-width: 100%; max-height: 80vh; margin: auto; }
@@ -656,13 +675,13 @@ if ($total_size === null) {
             width: 2rem;
             height: 2rem;
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
         }
 
         .upload-area.drag-over { outline: 2px dashed #2563eb; outline-offset: -4px; background: #eff6ff; }
         body.dark .upload-area.drag-over { background: #14213a; }
-        .upload-hint { font-size: 0.78rem; color: #94a3b8; margin-top: 0.5rem; }
-        .upload-progress { margin-top: 0.6rem; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: none; }
+        .upload-hint { font-size: var(--fs-xxs); color: #94a3b8; margin-top: var(--sp-2); }
+        .upload-progress { margin-top: var(--sp-2); height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; display: none; }
         .upload-progress-bar { height: 100%; width: 0%; background: #16a34a; transition: width 0.15s; }
         body.dark .upload-progress { background: #232838; }
     </style>
@@ -721,7 +740,7 @@ if ($total_size === null) {
             📂 Select Files
             <input type="file" name="upload[]" id="upload-input" required multiple style="display:none" onchange="updateUploadLabel(this)">
         </label>
-        <span id="upload-filenames" style="color:#6c757d;font-size:0.85rem;flex:1"></span>
+        <span id="upload-filenames" style="color:#6c757d;font-size:var(--fs-sm);flex:1"></span>
         <button type="submit" class="btn btn-success" id="btn-send">⬆️ Send</button>
         <button type="button" class="btn btn-secondary" onclick="document.getElementById('upload-area').classList.remove('open')">✖️ Cancel</button>
     </form>
@@ -732,7 +751,7 @@ if ($total_size === null) {
 <div class="mkdir-area" id="mkdir-area">
     <form method="POST">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-        <input type="text" name="mkdir" placeholder="Folder name" required style="flex:1;padding:0.4rem 0.7rem;border-radius:6px;border:1px solid #ced4da;font-size:0.85rem">
+        <input type="text" name="mkdir" placeholder="Folder name" required style="flex:1;padding:var(--sp-2) var(--sp-3);border-radius:6px;border:1px solid #ced4da;font-size:var(--fs-sm)">
         <button type="submit" class="btn btn-secondary">✔️ Create</button>
         <button type="button" class="btn btn-secondary" onclick="document.getElementById('mkdir-area').classList.remove('open')">✖️ Cancel</button>
     </form>
@@ -741,8 +760,8 @@ if ($total_size === null) {
 <div class="mkdir-area" id="newfile-area">
     <form method="POST" style="align-items:flex-start">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-        <input type="text" name="newfile" placeholder="File name (e.g. notes.txt)" required style="flex:1;min-width:160px;padding:0.4rem 0.7rem;border-radius:6px;border:1px solid #ced4da;font-size:0.85rem">
-        <textarea name="newfile_content" placeholder="Optional content..." rows="2" style="flex:2;min-width:200px;padding:0.4rem 0.7rem;border-radius:6px;border:1px solid #ced4da;font-size:0.85rem;font-family:inherit;resize:vertical"></textarea>
+        <input type="text" name="newfile" placeholder="File name (e.g. notes.txt)" required style="flex:1;min-width:160px;padding:var(--sp-2) var(--sp-3);border-radius:6px;border:1px solid #ced4da;font-size:var(--fs-sm)">
+        <textarea name="newfile_content" placeholder="Optional content..." rows="2" style="flex:2;min-width:200px;padding:var(--sp-2) var(--sp-3);border-radius:6px;border:1px solid #ced4da;font-size:var(--fs-sm);font-family:inherit;resize:vertical"></textarea>
         <button type="submit" class="btn btn-secondary">✔️ Create</button>
         <button type="button" class="btn btn-secondary" onclick="document.getElementById('newfile-area').classList.remove('open')">✖️ Cancel</button>
     </form>

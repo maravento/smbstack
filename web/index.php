@@ -19,6 +19,9 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+        try { if (localStorage.getItem('smbstack_theme') === 'dark') { document.documentElement.classList.add('dark'); } } catch (e) {}
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SMBstack</title>
@@ -27,6 +30,26 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
     <link rel="apple-touch-icon" href="/icon.svg">
     <meta name="theme-color" content="#2c3e50">
     <style>
+        :root {
+            /* Typography scale */
+            --fs-xxs: 0.75rem;
+            --fs-xs: 0.8rem;
+            --fs-sm: 0.85rem;
+            --fs-base: 0.9rem;
+            --fs-md: 0.95rem;
+            --fs-lg: 1rem;
+            --fs-xl: 1.1rem;
+            --fs-icon: 1.3rem;
+            /* Spacing scale */
+            --sp-1: 0.25rem;
+            --sp-2: 0.5rem;
+            --sp-3: 0.75rem;
+            --sp-4: 1rem;
+            --sp-5: 1.25rem;
+            --sp-6: 1.5rem;
+            --sp-8: 2rem;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         html, body {
@@ -37,24 +60,24 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             transition: background .2s;
         }
 
-        body.dark { background: #0b0f16; }
-        body.dark .header { background: #141721; }
-        body.dark .header-top { border-bottom-color: rgba(255,255,255,0.05); }
-        body.dark .header-date { background: rgba(255,255,255,0.05); color: #e2e8f0; }
-        body.dark .tabs { background: #0f1117; }
-        body.dark .tab { color: #607d8b; }
-        body.dark .tab:hover { color: #cbd5e0; background: rgba(255,255,255,0.03); }
-        body.dark .tab.active { background: rgba(246,173,85,0.06); }
-        body.dark .btn-theme { background: #232838; color: #e2e8f0; }
-        body.dark .btn-theme:hover { background: #2d3748; }
+        html.dark { background: #0b0f16; }
+        html.dark .header { background: #141721; }
+        html.dark .header-top { border-bottom-color: rgba(255,255,255,0.05); }
+        html.dark .header-date { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+        html.dark .tabs { background: #0f1117; }
+        html.dark .tab { color: #607d8b; }
+        html.dark .tab:hover { color: #cbd5e0; background: rgba(255,255,255,0.03); }
+        html.dark .tab.active { background: rgba(246,173,85,0.06); }
+        html.dark .btn-theme { background: #232838; color: #e2e8f0; }
+        html.dark .btn-theme:hover { background: #2d3748; }
 
         .btn-theme {
             background: rgba(255,255,255,0.08);
             color: #e6eef8;
             border: none;
-            padding: 0.3rem 0.6rem;
+            padding: var(--sp-1) var(--sp-2);
             border-radius: 6px;
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             cursor: pointer;
             transition: background .15s;
         }
@@ -77,22 +100,22 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0.6rem 1.2rem;
+            padding: var(--sp-2) var(--sp-5);
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
 
         .header-right {
             display: flex;
             align-items: center;
-            gap: 0.6rem;
+            gap: var(--sp-2);
         }
 
         .header-brand {
             display: flex;
             align-items: center;
-            gap: 0.6rem;
+            gap: var(--sp-2);
             color: white;
-            font-size: 1rem;
+            font-size: var(--fs-lg);
             font-weight: 700;
             letter-spacing: 0.02em;
             text-decoration: none;
@@ -104,21 +127,21 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
         }
 
         .header-brand span {
-            font-size: 1.3rem;
+            font-size: var(--fs-icon);
         }
 
         .header-title {
             color: #e2e8f0;
-            font-size: 0.95rem;
+            font-size: var(--fs-md);
             font-weight: 600;
         }
 
         .header-date {
             color: #e2e8f0;
-            font-size: 0.85rem;
+            font-size: var(--fs-sm);
             font-weight: 600;
             background: rgba(255,255,255,0.07);
-            padding: 0.3rem 0.7rem;
+            padding: var(--sp-1) var(--sp-3);
             border-radius: 6px;
         }
 
@@ -127,17 +150,17 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 0 1rem;
-            gap: 0.25rem;
+            padding: 0 var(--sp-4);
+            gap: var(--sp-1);
             background: #243447;
         }
 
         .tab {
             display: flex;
             align-items: center;
-            gap: 0.4rem;
-            padding: 0.55rem 1.1rem;
-            font-size: 0.85rem;
+            gap: var(--sp-2);
+            padding: var(--sp-2) var(--sp-4);
+            font-size: var(--fs-sm);
             font-weight: 500;
             color: #8899aa;
             text-decoration: none;
@@ -160,7 +183,7 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
             background: rgba(246,173,85,0.08);
         }
 
-        .tab-icon { font-size: 1rem; }
+        .tab-icon { font-size: var(--fs-lg); }
 
         /* ── IFRAME ── */
         .frame-container {
@@ -193,13 +216,13 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
         </div>
     </div>
     <div class="tabs">
-        <a class="tab <?= $tab === 'shared' ? 'active' : '' ?>" href="?tab=shared">
+        <a class="tab <?= $tab === 'shared' ? 'active' : '' ?>" href="?tab=shared" <?= $tab === 'shared' ? 'aria-current="page"' : '' ?>>
             <span class="tab-icon">📁</span> Shared
         </a>
-        <a class="tab <?= $tab === 'audit' ? 'active' : '' ?>" href="?tab=audit">
+        <a class="tab <?= $tab === 'audit' ? 'active' : '' ?>" href="?tab=audit" <?= $tab === 'audit' ? 'aria-current="page"' : '' ?>>
             <span class="tab-icon">📊</span> Audit
         </a>
-        <a class="tab <?= $tab === 'report' ? 'active' : '' ?>" href="?tab=report">
+        <a class="tab <?= $tab === 'report' ? 'active' : '' ?>" href="?tab=report" <?= $tab === 'report' ? 'aria-current="page"' : '' ?>>
             <span class="tab-icon">💾</span> Report
         </a>
     </div>
@@ -207,11 +230,11 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 
 <div class="frame-container">
     <?php if ($tab === 'shared'): ?>
-        <iframe src="/shared/" id="frame-shared"></iframe>
+        <iframe src="/shared/" id="frame-shared" onload="syncFrameTheme(this)"></iframe>
     <?php elseif ($tab === 'report'): ?>
-        <iframe src="/report/" id="frame-report"></iframe>
+        <iframe src="/report/" id="frame-report" onload="syncFrameTheme(this)"></iframe>
     <?php else: ?>
-        <iframe src="/audit/" id="frame-audit"></iframe>
+        <iframe src="/audit/" id="frame-audit" onload="syncFrameTheme(this)"></iframe>
     <?php endif; ?>
 </div>
 
@@ -234,17 +257,21 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
     }
 
     function toggleTheme() {
-        var dark = document.body.classList.toggle('dark');
+        var dark = document.documentElement.classList.toggle('dark');
         document.getElementById('btnTheme').textContent = dark ? '☀️' : '🌙';
         try { localStorage.setItem('smbstack_theme', dark ? 'dark' : 'light'); } catch (e) {}
         broadcastTheme(dark);
     }
 
+    function syncFrameTheme(iframe) {
+        var dark = document.documentElement.classList.contains('dark');
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ smbstackTheme: dark ? 'dark' : 'light' }, window.location.origin);
+        }
+    }
+
     function initTheme() {
-        var saved = '';
-        try { saved = localStorage.getItem('smbstack_theme') || ''; } catch (e) {}
-        if (saved === 'dark') {
-            document.body.classList.add('dark');
+        if (document.documentElement.classList.contains('dark')) {
             document.getElementById('btnTheme').textContent = '☀️';
         }
     }

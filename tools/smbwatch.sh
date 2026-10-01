@@ -24,7 +24,20 @@
 #                    e.g. WATCH_EXCLUDE="FINANCE,LEGAL"
 #
 # USAGE:
-# ./smbwatch.sh {start|stop|status}
+# ./smbwatch.sh {install|uninstall|start|stop|status}
+#
+# install   interactive, run once. Asks for WATCH_LIMIT_GB and WATCH_EXCLUDE,
+#           writes them to smbstack.env, registers the @reboot cron entry and
+#           then starts the watcher. The only action that writes a key.
+# uninstall stops the watcher, removes the cron entry, and removes both keys
+#           and their section header from smbstack.env.
+# start     validates the keys and launches the watcher. Never writes. Aborts
+#           telling the operator to run install if a key is missing. This is
+#           what cron runs on every boot.
+# stop      kills the watcher and clears its pid and state files. Leaves the
+#           cron entry and the keys in place.
+# status    reports whether the watcher is running, with its limit and the
+#           folder list. Reads nothing it could abort on.
 #
 # LOG: /var/log/smbwatch.log (root:root, 640)
 #      Rotated weekly via /etc/logrotate.d/smbwatch
@@ -108,36 +121,6 @@ is_smbwatch_running() {
     [ -n "$process_group" ] && pgrep -g "$process_group" -x inotifywait >/dev/null 2>&1
 }
 
-# LOAD ENV
-# Abort if smbstack is not installed, then read its .env file
-if [ ! -f "$smbstack_env" ]; then
-    log "ERROR: smbstack is not installed -- abort"
-    exit 1
-fi
-
-load_conf() {
-    local conf_file="$1" env_key env_value env_line
-    [[ ! -f "$conf_file" ]] && { log "WARNING: $conf_file not found -- fallback"; return 1; }
-    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
-        [[ "$env_line" =~ ^[[:space:]]*[#] ]] && continue
-        [[ "$env_line" =~ ^[[:space:]]*$ ]] && continue
-        env_key="${env_line%%=*}"
-        env_value="${env_line#*=}"
-        if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
-           || [[ "$env_value" == [[:space:]\"\']* ]] \
-           || [[ "$env_value" == *[[:space:]\"\'] ]]; then
-            log "ERROR: malformed line in $conf_file: '$env_line' -- abort"
-            exit 1
-        fi
-        case "$env_key" in
-            SHARED_PATH|LOCAL_USER|WATCH_LIMIT_GB|WATCH_EXCLUDE)
-                printf -v "$env_key" '%s' "$env_value"
-                ;;
-        esac
-    done < "$conf_file"
-}
-load_conf "$smbstack_env"
-
 # wait for the mounted path
 wait_mounted_path() {
     local target_path="$1" max_attempts="${2:-12}" attempt=1
@@ -202,6 +185,180 @@ handle_new_file() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# ENV
+# ------------------------------------------------------------------------------
+
+# PERMS
+# Owner and mode of every .env this script reads
+env_specs=("$smbstack_env root:www-data 640")
+for env_spec in "${env_specs[@]}"; do
+    read -r env_path env_owner_want env_perms_want <<< "$env_spec"
+    if [ ! -f "$env_path" ]; then
+        log "ERROR: $(basename "$env_path") not found -- abort"
+        exit 1
+    fi
+    env_owner=$(stat -c '%U:%G' "$env_path" 2>/dev/null)
+    env_perms=$(stat -c '%a' "$env_path" 2>/dev/null)
+    if [[ "$env_owner" != "$env_owner_want" ]] \
+       || [[ "$env_perms" != "$env_perms_want" ]]; then
+        if chown "$env_owner_want" "$env_path" 2>/dev/null \
+           && chmod "$env_perms_want" "$env_path" 2>/dev/null; then
+            log "INFO: $(basename "$env_path") perms fixed -- fixed"
+        else
+            log "ERROR: cannot fix $(basename "$env_path") perms -- abort"
+            exit 1
+        fi
+    fi
+done
+unset env_specs env_spec env_path env_owner_want env_perms_want
+unset env_owner env_perms
+
+# LOAD_CONF
+# Read known key=value pairs from a config file, without sourcing it
+load_conf() {
+    local conf_file="$1" env_key env_value env_line
+    [[ ! -f "$conf_file" ]] && { log "WARNING: $conf_file not found -- fallback"; return 1; }
+    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
+        [[ "$env_line" =~ ^[[:space:]]*[#] ]] && continue
+        [[ "$env_line" =~ ^[[:space:]]*$ ]] && continue
+        env_key="${env_line%%=*}"
+        env_value="${env_line#*=}"
+        if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
+           || [[ "$env_value" == [[:space:]\"\']* ]] \
+           || [[ "$env_value" == *[[:space:]\"\'] ]]; then
+            log "ERROR: malformed line in $(basename "$conf_file"): '$env_line' -- abort"
+            exit 1
+        fi
+        case "$env_key" in
+            SHARED_PATH|LOCAL_USER|WATCH_LIMIT_GB|WATCH_EXCLUDE)
+                printf -v "$env_key" '%s' "$env_value"
+                ;;
+        esac
+    done < "$conf_file"
+}
+
+# LOAD
+load_conf "$smbstack_env" || true
+
+# KEY CHECK
+# Deferred into a function, not run at top level: install creates the two
+# WATCH keys, so a top-level check would abort before install could write
+# them. stop and status do not need them either. Only start calls this.
+#
+# Collect every failure first, then decide -- a single abort reports them all
+check_keys() {
+    local key_errors key_error env_key
+    key_errors=()
+    for env_key in SHARED_PATH LOCAL_USER WATCH_EXCLUDE; do
+        if ! grep -q "^${env_key}=" "$smbstack_env"; then
+            key_errors+=("$env_key missing line")
+        elif [[ -z "${!env_key:-}" ]]; then
+            key_errors+=("$env_key not set")
+        fi
+    done
+    if ! grep -q "^WATCH_LIMIT_GB=" "$smbstack_env"; then
+        key_errors+=("WATCH_LIMIT_GB missing line")
+    elif [[ -z "${WATCH_LIMIT_GB:-}" ]]; then
+        key_errors+=("WATCH_LIMIT_GB not set")
+    elif ! [[ "$WATCH_LIMIT_GB" =~ $UH_UINT ]] \
+         || (( WATCH_LIMIT_GB < 1 || WATCH_LIMIT_GB > 10000 )); then
+        key_errors+=("WATCH_LIMIT_GB invalid GB, expected 1 to 10000")
+    fi
+    if (( ${#key_errors[@]} > 0 )); then
+        for key_error in "${key_errors[@]}"; do
+            log "ERROR: $key_error"
+        done
+        log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env")"
+        log "ERROR: run '$(basename "$0") install' first -- abort"
+        exit 1
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# INSTALL
+# ------------------------------------------------------------------------------
+
+# The only action that writes a key. It asks the operator, writes both WATCH
+# keys into smbstack.env, registers the @reboot cron entry and then starts the
+# watcher. A .env is written by an installer or by the administrator, never by
+# a script in normal operation.
+install_module() {
+    local input_limit input_exclude watch_header_added
+
+    if [ ! -t 0 ]; then
+        log "ERROR: install is interactive, run it from a terminal -- abort"
+        exit 1
+    fi
+
+    # first time either key is written: wrap them in a divider block, like
+    # uhm.env does for its own sections
+    watch_header_added=0
+    if ! grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" \
+       && ! grep -q '^WATCH_EXCLUDE=' "$smbstack_env"; then
+        {
+            echo ""
+            echo "# ============================================================================="
+            echo "# SMBWATCH (added by smbwatch.sh install)"
+            echo "# ============================================================================="
+        } >> "$smbstack_env"
+        watch_header_added=1
+    fi
+
+    while true; do
+        read -rp "Enter watch limit per folder in GB [10]: " input_limit
+        input_limit="${input_limit:-10}"
+        if [[ "$input_limit" =~ $UH_UINT ]] \
+           && (( input_limit >= 1 && input_limit <= 10000 )); then
+            WATCH_LIMIT_GB="$input_limit"
+            set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
+            log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
+            break
+        fi
+        log "INFO: enter a valid number between 1 and 10000 -- retry"
+    done
+
+    read -rp "Enter folders to exclude from watch limit (comma-separated, or leave empty): " input_exclude
+    if [ -n "$input_exclude" ]; then
+        WATCH_EXCLUDE="$input_exclude"
+        set_env_var "WATCH_EXCLUDE" "$WATCH_EXCLUDE"
+        log "INFO: excluded folders: ${WATCH_EXCLUDE}"
+    else
+        WATCH_EXCLUDE="NONE"
+        set_env_var "WATCH_EXCLUDE" "NONE"
+        log "INFO: no folders excluded"
+    fi
+
+    if [ "$watch_header_added" -eq 1 ]; then
+        echo "# =============================================================================" >> "$smbstack_env"
+    fi
+
+    cron_d_set "$script_path" "@reboot root $script_path start"
+    log "INFO: added to cron @reboot"
+
+    # legacy entry in root's crontab, from versions before /etc/cron.d
+    crontab -l 2>/dev/null | { grep -vF "$script_path" || true; } | crontab - 2>/dev/null || true
+
+    start
+}
+
+# ------------------------------------------------------------------------------
+# UNINSTALL
+# ------------------------------------------------------------------------------
+
+# Stops the watcher, drops the cron entry and removes both WATCH keys, so a
+# later install starts from a clean state.
+uninstall_module() {
+    stop
+
+    cron_d_set "$script_path" ""
+    log "INFO: removed from cron @reboot"
+
+    sed -i '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d' "$smbstack_env"
+    sed -i '/^# SMBWATCH (added by smbwatch.sh/,+1d' "$smbstack_env"
+    log "INFO: WATCH keys removed from $(basename "$smbstack_env")"
+}
+
 # START
 # Launch the inotifywait watcher in background and write its pid file
 start() {
@@ -225,72 +382,12 @@ start() {
         chown root:root "$log_file"
     fi
 
-    # keys can only be asked for interactively; under cron there is nobody to answer
-    if { [ -z "${WATCH_LIMIT_GB:-}" ] || [ -z "${WATCH_EXCLUDE:-}" ]; } && [ ! -t 0 ]; then
-        log "ERROR: WATCH_LIMIT_GB/WATCH_EXCLUDE not set in .env -- abort"
-        exit 1
-    fi
-
-    # first time either key is written: wrap them in a divider block, like uhm.env does for its own sections
-    watch_header_added=0
-    if ! grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" && ! grep -q '^WATCH_EXCLUDE=' "$smbstack_env"; then
-        {
-            echo ""
-            echo "# ============================================================================="
-            echo "# SMBWATCH (added by smbwatch.sh on first run)"
-            echo "# ============================================================================="
-        } >> "$smbstack_env"
-        watch_header_added=1
-    fi
-
-    # CHECK AND SET WATCH_LIMIT_GB
-    if [ -z "${WATCH_LIMIT_GB:-}" ]; then
-        while true; do
-            read -p "Enter watch limit per folder in GB [10]: " input_limit
-            input_limit="${input_limit:-10}"
-            if [[ "$input_limit" =~ $UH_UINT ]] && [ "$input_limit" -gt 0 ] && [ "$input_limit" -le 10000 ]; then
-                WATCH_LIMIT_GB="$input_limit"
-                set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
-                log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
-                break
-            else
-                log "INFO: enter a valid number between 1 and 10000 -- retry"
-            fi
-        done
-    fi
-
-    # CHECK AND SET WATCH_EXCLUDE
-    if [ -z "${WATCH_EXCLUDE:-}" ]; then
-        read -p "Enter folders to exclude from watch limit (comma-separated, or leave empty): " input_exclude
-        if [ -n "$input_exclude" ]; then
-            WATCH_EXCLUDE="$input_exclude"
-            set_env_var "WATCH_EXCLUDE" "$WATCH_EXCLUDE"
-            log "INFO: excluded folders: ${WATCH_EXCLUDE}"
-        else
-            WATCH_EXCLUDE="NONE"
-            set_env_var "WATCH_EXCLUDE" "NONE"
-            log "INFO: no folders excluded"
-        fi
-    fi
-    if [ "$watch_header_added" -eq 1 ]; then
-        echo "# =============================================================================" >> "$smbstack_env"
-    fi
+    check_keys
     [ "$WATCH_EXCLUDE" = "NONE" ] && WATCH_EXCLUDE=""
-
-    if ! [[ "$WATCH_LIMIT_GB" =~ $UH_UINT ]] || [ "$WATCH_LIMIT_GB" -lt 1 ] || [ "$WATCH_LIMIT_GB" -gt 10000 ]; then
-        log "ERROR: invalid WATCH_LIMIT_GB in $(basename "$smbstack_env")"
-        log "ERROR: use an integer from 1 to 10000 -- abort"
-        exit 1
-    fi
 
     size_limit=$((WATCH_LIMIT_GB * 1024 * 1024 * 1024))
 
     # BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
-    if [ -z "${SHARED_PATH:-}" ]; then
-        log "ERROR: SHARED_PATH not set in $(basename "$smbstack_env") -- abort"
-        exit 1
-    fi
-
     if ! wait_mounted_path "$SHARED_PATH"; then
         log "ERROR: shared folder $(basename "$SHARED_PATH") not available"
         log "ERROR: check the mount and start smbwatch again -- abort"
@@ -346,12 +443,6 @@ start() {
     echo $! > "$pid_file"
     log "INFO: started with PID $(cat "$pid_file")"
 
-    # add @reboot cron entry
-    cron_d_set "$script_path" "@reboot root $script_path start"
-    log "INFO: added to cron @reboot"
-
-    # legacy entry in root's crontab, from versions before /etc/cron.d
-    crontab -l 2>/dev/null | { grep -vF "$script_path" || true; } | crontab - 2>/dev/null || true
 }
 
 # STOP
@@ -377,8 +468,6 @@ stop() {
         log "INFO: SMBwatch is not running"
     fi
 
-    cron_d_set "$script_path" ""
-    log "INFO: removed from cron @reboot"
 }
 
 # STATUS
@@ -406,10 +495,12 @@ status() {
 log "smbwatch start..."
 
 case "${1:-}" in
-    start)  start ;;
-    stop)   stop ;;
-    status) status ;;
-    *)      log "INFO: Usage: $(basename "$0") {start|stop|status}" ;;
+    install)   install_module ;;
+    uninstall) uninstall_module ;;
+    start)     start ;;
+    stop)      stop ;;
+    status)    status ;;
+    *)         log "INFO: Usage: $(basename "$0") {install|uninstall|start|stop|status}" ;;
 esac
 
 # ------------------------------------------------------------------------------
