@@ -8,7 +8,7 @@ header('Content-Type: application/json');
 
 $server_ip     = '';
 $max_log_lines = '';
-$env_file      = '/var/www/smbstack/smbstack.env';
+$env_file      = '/etc/smbstack/smbstack.env';
 if (file_exists($env_file)) {
     foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         if (strpos($line, 'SERVER_IP=') === 0) {

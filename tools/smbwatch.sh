@@ -3,44 +3,20 @@
 #
 ################################################################################
 #
-# smbwatch - Shared Folder Watchdog
-# https://github.com/maravento/smbstack
+# smbwatch -- shared folder size monitor for smbstack
 #
-# Monitors first-level subdirectories of the shared folder.
-# When a subdirectory exceeds WATCH_LIMIT_GB, the triggering file
-# is moved to .recycle/smbwatch/<YYYYMMDD>/ (this script's own channel,
-# separate from .recycle/smbguest/ used by SMB and .recycle/www-data/
-# used by the web interface).
-# Folders listed in WATCH_EXCLUDE are not monitored (no size limit).
-#
-# The folder list is built once at startup. First-level folders can only be
-# created by the administrator from the server shell (SMB clients and the web
-# panel are blocked at the share root), so after adding one, restart smbwatch
-# to include it.
-#
-# ENV:
-#  WATCH_LIMIT_GB  : size limit per monitored folder in GB (default: 10)
-#  WATCH_EXCLUDE   : comma-separated folder names to exclude from monitoring
-#                    e.g. WATCH_EXCLUDE="FINANCE,LEGAL"
+# DESCRIPTION:
+# Watches the first-level folders of the shared folder, and recycles the
+# file that pushes one over its limit. Requires root.
 #
 # USAGE:
-# ./smbwatch.sh {install|uninstall|start|stop|status}
+# sudo bash smbwatch.sh install      Ask for the keys and start the watcher
+# sudo bash smbwatch.sh uninstall    Remove the cron entry and the keys
+# sudo bash smbwatch.sh start        Start the watcher
+# sudo bash smbwatch.sh stop         Stop the watcher
+# sudo bash smbwatch.sh status       Report whether the watcher runs
 #
-# install   interactive, run once. Asks for WATCH_LIMIT_GB and WATCH_EXCLUDE,
-#           writes them to smbstack.env, registers the @reboot cron entry and
-#           then starts the watcher. The only action that writes a key.
-# uninstall stops the watcher, removes the cron entry, and removes both keys
-#           and their section header from smbstack.env.
-# start     validates the keys and launches the watcher. Never writes. Aborts
-#           telling the operator to run install if a key is missing. This is
-#           what cron runs on every boot.
-# stop      kills the watcher and clears its pid and state files. Leaves the
-#           cron entry and the keys in place.
-# status    reports whether the watcher is running, with its limit and the
-#           folder list. Reads nothing it could abort on.
-#
-# LOG: /var/log/smbwatch.log (root:root, 640)
-#      Rotated weekly via /etc/logrotate.d/smbwatch
+# LOG: /var/log/smbwatch.log
 #
 ################################################################################
 
@@ -79,7 +55,7 @@ done
 
 script_dir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 script_path="$script_dir/$(basename "$0")"
-smbstack_env="/var/www/smbstack/smbstack.env"
+smbstack_env="/etc/smbstack/smbstack.env"
 run_dir="/run"
 mkdir -p "$run_dir"
 pid_file="$run_dir/smbstack-smbwatch.pid"
@@ -163,15 +139,11 @@ handle_new_file() {
     [[ "$dir_size" =~ $UH_UINT ]] || dir_size=0
 
     if [ "$dir_size" -ge "$size_limit" ]; then
-        mkdir -p "$recycle_dir"
-        chown "${LOCAL_USER:-root}":sambashare "$recycle_dir" 2>/dev/null || true
-        chmod 775 "$recycle_dir"
+        install -d -o root -g root -m 755 "$recycle_dir"
         local recycle_date
         recycle_date=$(date +%Y%m%d)
         local dest_path="$recycle_dir/$recycle_date"
-        mkdir -p "$dest_path"
-        chown "${LOCAL_USER:-root}":sambashare "$dest_path"
-        chmod 775 "$dest_path"
+        install -d -o root -g root -m 755 "$dest_path"
 
         if [ -f "$new_file" ]; then
             mv -f --backup=numbered "$new_file" "$dest_path/$(basename "$new_file")"
@@ -231,7 +203,7 @@ load_conf() {
             exit 1
         fi
         case "$env_key" in
-            SHARED_PATH|LOCAL_USER|WATCH_LIMIT_GB|WATCH_EXCLUDE)
+            SHARED_PATH|WATCH_LIMIT_GB|WATCH_EXCLUDE)
                 printf -v "$env_key" '%s' "$env_value"
                 ;;
         esac
@@ -250,7 +222,7 @@ load_conf "$smbstack_env" || true
 check_keys() {
     local key_errors key_error env_key
     key_errors=()
-    for env_key in SHARED_PATH LOCAL_USER WATCH_EXCLUDE; do
+    for env_key in SHARED_PATH WATCH_EXCLUDE; do
         if ! grep -q "^${env_key}=" "$smbstack_env"; then
             key_errors+=("$env_key missing line")
         elif [[ -z "${!env_key:-}" ]]; then
@@ -287,7 +259,7 @@ install_module() {
     local input_limit input_exclude watch_header_added
 
     if [ ! -t 0 ]; then
-        log "ERROR: install is interactive, run it from a terminal -- abort"
+        log "ERROR: installation requires answering questions -- abort"
         exit 1
     fi
 
@@ -431,6 +403,7 @@ start() {
     # arrives by rename fires only moved_to, so a file moved in from another
     # folder would otherwise skip the limit. A directory only ever fires
     # create, and is recognized by the ISDIR flag.
+    set -m
     inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
         case "$event_name" in
             *ISDIR*)      [[ "$event_name" == CREATE* ]] || continue ;;
@@ -441,6 +414,7 @@ start() {
     done &
 
     echo $! > "$pid_file"
+    set +m
     log "INFO: started with PID $(cat "$pid_file")"
 
 }
@@ -452,7 +426,7 @@ stop() {
     if [ -f "$pid_file" ]; then
         local watch_pid process_group
         watch_pid=$(cat "$pid_file")
-        if kill -0 "$watch_pid" 2>/dev/null; then
+        if is_smbwatch_running "$watch_pid"; then
             process_group=$(ps -o pgid= -p "$watch_pid" 2>/dev/null | tr -d ' ')
             if [ -n "$process_group" ]; then
                 kill -- "-$process_group" 2>/dev/null

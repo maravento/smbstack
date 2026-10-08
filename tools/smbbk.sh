@@ -3,30 +3,18 @@
 #
 ################################################################################
 #
-# smbbk - configuration backup for smbstack
+# smbbk -- configuration backup for smbstack
 #
 # DESCRIPTION:
-# Creates one compressed archive containing the project installation and
-# relevant system configuration. Paths that do not exist are skipped with
-# a notice.
-#
-# Run it by hand before applying changes, or let the monthly cron entry
-# do it. Restore by unzipping the archive over /.
+# Creates one compressed archive with the smbstack installation and its
+# system configuration. Requires root.
 #
 # USAGE:
 # sudo bash smbbk.sh            Create a backup now
 # sudo bash smbbk.sh install    Register the @monthly cron entry
 # sudo bash smbbk.sh uninstall  Remove the cron entry (keeps archives)
 #
-# OUTPUT:
-# /etc/bak/smbstack/smbbk_<YYYYMMDD_HHMM>.zip
-#
-# EXIT CODES:
-# 0 - Archive created
-# 1 - Not root, already running, missing dependency, nothing to back up,
-#     or the archive could not be written
-#
-# LOG: /var/log/smbstack.log (shared with the rest of the project)
+# LOG: /var/log/smbstack.log
 #
 ################################################################################
 
@@ -73,9 +61,9 @@ done
 # ------------------------------------------------------------------------------
 
 backup_dir="/etc/bak/smbstack"
-backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M).zip"
+backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
 installed_path="/etc/smbstack/tools/$(basename "$0")"
-smbstack_env="/var/www/smbstack/smbstack.env"
+smbstack_env="/etc/smbstack/smbstack.env"
 
 # temp file for user/group snapshot -- always cleaned up on exit
 tmp_users_file=$(mktemp)
@@ -304,8 +292,8 @@ done >> "$tmp_users_file"
 backup_list=()
 for backup_item in \
     /var/www/smbstack \
+    /etc/smbstack \
     /etc/samba/smb.conf \
-    /etc/samba/acl \
     /var/lib/samba/private \
     /etc/apache2/sites-available/smbweb.conf \
     /etc/apache2/ports.conf \
@@ -331,8 +319,19 @@ if (( ${#backup_list[@]} == 0 )); then
     exit 1
 fi
 
-if (umask 077; zip -r -q "$backup_zip" "${backup_list[@]}"); then
-    chmod 600 "$backup_zip"
+# Build under a .part name so zip always starts from nothing, and so a failed
+# run can only ever delete its own work. The archive takes its final name once
+# zip has succeeded, which also keeps the retention glob from seeing a partial.
+backup_part="${backup_zip}.part"
+rm -f "$backup_part"
+if (umask 077; zip -r -q -y "$backup_part" "${backup_list[@]}"); then
+    chmod 600 "$backup_part"
+    if ! mv -f "$backup_part" "$backup_zip"; then
+        rm -f "$backup_part"
+        log "ERROR: cannot name archive $(basename "$backup_zip")"
+        log "ERROR: check free space and permissions -- abort"
+        exit 1
+    fi
     log "INFO: backup written to $(basename "$backup_zip")"
 
     # keep only the last 3
@@ -341,7 +340,7 @@ if (umask 077; zip -r -q "$backup_zip" "${backup_list[@]}"); then
         printf '%s\n' "${old_backups[@]}" | sort | head -n -3 | xargs -r rm -f
     fi
 else
-    rm -f "$backup_zip"
+    rm -f "$backup_part"
     log "ERROR: cannot write archive $(basename "$backup_zip")"
     log "ERROR: check free space and permissions -- abort"
     exit 1

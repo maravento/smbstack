@@ -3,18 +3,16 @@
 #
 ################################################################################
 #
-# smbload - Service Watchdog
-# https://github.com/maravento/smbstack
+# smbload -- service watchdog for smbstack
 #
-# Checks smbd and winbind, and starts them if they are down.
-# Also checks smbwatch.sh and restarts it if it is not running.
+# DESCRIPTION:
+# Checks smbd, winbind and smbwatch, and starts whatever is down.
+# Requires root.
 #
-# It reads no configuration of its own. It is a watchdog: it brings back up
-# whatever is down, and nothing else. Every script it starts validates its
-# own keys and logs its own cause of failure, so a problem is diagnosed in
-# that script's log, not here.
+# USAGE:
+# sudo bash smbload.sh    Run one check now
 #
-# LOG: /var/log/smbload.log (rewritten on each run)
+# LOG: /var/log/smbload.log
 #
 ################################################################################
 

@@ -17,7 +17,7 @@ $LOG_FILE = '/var/log/samba/log.audit';
 // MAX_LOG_LINES: same value smbapi.php reads from smbstack.env (installer
 // default: 50000). Kept in sync so this diagnostic reports the real limit.
 $MAX_LOG_LINES = 50000;
-$env_file = '/var/www/smbstack/smbstack.env';
+$env_file = '/etc/smbstack/smbstack.env';
 if (file_exists($env_file)) {
     foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         if (strpos($line, 'MAX_LOG_LINES=') === 0) {

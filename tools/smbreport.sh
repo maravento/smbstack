@@ -3,26 +3,18 @@
 #
 ################################################################################
 #
-# smbreport - disk usage report for the shared folder
+# smbreport -- disk usage report for smbstack
 #
 # DESCRIPTION:
-# Walks the shared folder once a day and writes a JSON report with three
-# tables: extensions, folders and largest files. The web panel reads that
-# file and paints the Report tab; it never walks the disk itself. The recycle
-# bin is left out of the walk, as it is everywhere else in the project.
-#
-# The walk runs as root from cron, at 03:00, when no one is working. A web
-# request cannot do it: the scan takes minutes and PHP would cut it short.
+# Walks the shared folder and writes the JSON report the web panel reads.
+# Requires root.
 #
 # USAGE:
 # sudo bash smbreport.sh            Build the report now
 # sudo bash smbreport.sh install    Register the daily cron entry
 # sudo bash smbreport.sh uninstall  Remove the cron entry (keeps the report)
 #
-# OUTPUT:
-# /var/www/smbstack/web/smbreport.json
-#
-# LOG: /var/log/smbstack.log (shared with the rest of the project)
+# LOG: /var/log/smbstack.log
 #
 ################################################################################
 
@@ -57,7 +49,7 @@ if ! flock -n 200; then
 fi
 
 # dependencies
-for dep_pkg in findutils coreutils util-linux cron; do
+for dep_pkg in findutils coreutils util-linux cron php-cli; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
         log "ERROR: missing dependency '$dep_pkg' -- abort"
         exit 1
@@ -68,7 +60,7 @@ done
 # VARIABLES
 # ------------------------------------------------------------------------------
 
-smbstack_env="/var/www/smbstack/smbstack.env"
+smbstack_env="/etc/smbstack/smbstack.env"
 installed_path="/etc/smbstack/tools/$(basename "$0")"
 report_json="/var/www/smbstack/web/smbreport.json"
 top_rows=30
@@ -128,72 +120,82 @@ deregister_cron() {
 
 # Build the JSON report from a single walk of the shared folder
 build_report() {
-    local scan_list total_files total_bytes report_tmp
-    scan_list=$(mktemp)
+    local total_files report_tmp
     report_tmp=$(mktemp)
-    trap 'rm -f "$scan_list" "$report_tmp"' RETURN
+    trap 'rm -f "$report_tmp"' RETURN
+
+    # A file name may contain any byte except NUL and the slash, so the
+    # inventory is NUL-delimited and php writes the JSON.
+    export SHARED_PATH TOP_ROWS="$top_rows" TOP_FILES="$top_files"
 
     # .recycle is pruned, not filtered afterwards: its paths must never reach
     # the report, which is the same rule smbshared.php and smbweb.conf apply
-    find "$SHARED_PATH" -name .recycle -prune -o -type f -printf '%s\t%p\n' \
-        2>/dev/null > "$scan_list"
-    total_files=$(wc -l < "$scan_list")
-    total_bytes=$(awk -F'\t' '{s+=$1} END{printf "%.0f", s+0}' "$scan_list")
-
-    {
-        printf '{\n'
-        printf '  "generated": "%s",\n' "$(date '+%Y-%m-%d %H:%M:%S')"
-        printf '  "folder": "%s",\n' "$(json_escape "$SHARED_PATH")"
-        printf '  "total_files": %s,\n' "$total_files"
-        printf '  "total_bytes": %s,\n' "$total_bytes"
-
-        printf '  "extensions": [\n'
-        awk -F'\t' '
-            { name = $2; sub(/.*\//, "", name)
-              if (name ~ /.\./) { ext = tolower(name); sub(/.*\./, "", ext) } else ext = "(none)"
-              count[ext]++; bytes[ext] += $1 }
-            END { for (e in count) printf "%d\t%s\t%d\n", bytes[e], e, count[e] }' "$scan_list" |
-            sort -t "$(printf '\t')" -k1,1nr | head -"$top_rows" |
-            awk -F'\t' 'BEGIN{ORS=""}
-                { gsub(/\\/, "\\\\", $2); gsub(/"/, "\\\"", $2)
-                  if (NR > 1) print ",\n"
-                  printf "    {\"name\": \"%s\", \"files\": %d, \"bytes\": %d}", $2, $3, $1 }
-                END { print "\n" }'
-        printf '  ],\n'
-
-        printf '  "folders": [\n'
-        awk -F'\t' '{ dir = $2; sub(/\/[^\/]*$/, "", dir); bytes[dir] += $1; count[dir]++ }
-            END { for (d in bytes) printf "%d\t%s\t%d\n", bytes[d], d, count[d] }' "$scan_list" |
-            sort -t "$(printf '\t')" -k1,1nr | head -"$top_rows" |
-            awk -F'\t' 'BEGIN{ORS=""}
-                { gsub(/\\/, "\\\\", $2); gsub(/"/, "\\\"", $2)
-                  if (NR > 1) print ",\n"
-                  printf "    {\"path\": \"%s\", \"files\": %d, \"bytes\": %d}", $2, $3, $1 }
-                END { print "\n" }'
-        printf '  ],\n'
-
-        printf '  "files": [\n'
-        sort -t "$(printf '\t')" -k1,1nr "$scan_list" | head -"$top_files" |
-            awk -F'\t' 'BEGIN{ORS=""}
-                { gsub(/\\/, "\\\\", $2); gsub(/"/, "\\\"", $2)
-                  if (NR > 1) print ",\n"
-                  printf "    {\"path\": \"%s\", \"bytes\": %d}", $2, $1 }
-                END { print "\n" }'
-        printf '  ]\n'
-        printf '}\n'
-    } > "$report_tmp"
+    if ! find "$SHARED_PATH" -name .recycle -prune -o -type f -printf '%s\0%p\0' \
+        2>/dev/null \
+        | php -r '
+            $data = stream_get_contents(STDIN);
+            $parts = explode("\0", $data);
+            $pairs = intdiv(count($parts), 2);
+            $rows = array();
+            for ($i = 0; $i < $pairs; $i++) {
+                $rows[] = array((float) $parts[$i * 2], $parts[$i * 2 + 1]);
+            }
+            $total_bytes = 0.0;
+            $by_ext = array();
+            $by_dir = array();
+            foreach ($rows as $row) {
+                list($size, $path) = $row;
+                $total_bytes += $size;
+                $name = basename($path);
+                $dot = strrpos($name, ".");
+                $ext = ($dot === false || $dot === 0) ? "(none)"
+                    : strtolower(substr($name, $dot + 1));
+                if (!isset($by_ext[$ext])) { $by_ext[$ext] = array(0.0, 0); }
+                $by_ext[$ext][0] += $size;
+                $by_ext[$ext][1]++;
+                $dir = dirname($path);
+                if (!isset($by_dir[$dir])) { $by_dir[$dir] = array(0.0, 0); }
+                $by_dir[$dir][0] += $size;
+                $by_dir[$dir][1]++;
+            }
+            $top = function ($map, $limit, $label) {
+                uasort($map, function ($a, $b) { return $b[0] <=> $a[0]; });
+                $out = array();
+                foreach (array_slice($map, 0, $limit, true) as $key => $val) {
+                    $out[] = array($label => $key, "files" => $val[1],
+                        "bytes" => (int) $val[0]);
+                }
+                return $out;
+            };
+            usort($rows, function ($a, $b) { return $b[0] <=> $a[0]; });
+            $files = array();
+            foreach (array_slice($rows, 0, (int) getenv("TOP_FILES")) as $row) {
+                $files[] = array("path" => $row[1], "bytes" => (int) $row[0]);
+            }
+            $report = array(
+                "generated" => date("Y-m-d H:i:s"),
+                "folder" => getenv("SHARED_PATH"),
+                "total_files" => count($rows),
+                "total_bytes" => (int) $total_bytes,
+                "extensions" => $top($by_ext, (int) getenv("TOP_ROWS"), "name"),
+                "folders" => $top($by_dir, (int) getenv("TOP_ROWS"), "path"),
+                "files" => $files,
+            );
+            $json = json_encode($report, JSON_PRETTY_PRINT
+                | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+            if ($json === false) { exit(1); }
+            echo $json, "\n";
+            exit(0);
+        ' > "$report_tmp"; then
+        log "ERROR: report not built, previous one kept -- alert"
+        return 1
+    fi
 
     mv -f "$report_tmp" "$report_json"
     chown root:www-data "$report_json"
     chmod 640 "$report_json"
+    total_files=$(grep -m1 '"total_files"' "$report_json" | tr -dc '0-9')
     log "INFO: report written, $total_files file(s) in $(basename "$SHARED_PATH")"
-}
-
-# Escape a value for a JSON string
-json_escape() {
-    local value="$1"
-    value="${value//\\/\\\\}"
-    printf '%s' "${value//\"/\\\"}"
 }
 
 # ------------------------------------------------------------------------------

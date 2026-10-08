@@ -27,7 +27,7 @@ function csrf_valid() {
 }
 
 $base_path = '';
-$env_file  = '/var/www/smbstack/smbstack.env';
+$env_file  = '/etc/smbstack/smbstack.env';
 if (file_exists($env_file)) {
     foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         if (strpos($line, 'SHARED_PATH=') === 0) {
@@ -38,7 +38,7 @@ if (file_exists($env_file)) {
 }
 if (!$base_path || !is_dir($base_path)) {
     http_response_code(500);
-    die('Shared folder not configured. Check /var/www/smbstack/smbstack.env');
+    die('Shared folder not configured. Check /etc/smbstack/smbstack.env');
 }
 
 // Audit log writer
@@ -50,7 +50,7 @@ function get_client_ip() {
     $remote_addr = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
     $trusted_proxies = array();
-    $env_file = '/var/www/smbstack/smbstack.env';
+    $env_file = '/etc/smbstack/smbstack.env';
     if (file_exists($env_file)) {
         foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
             if (strpos($line, 'TRUSTED_PROXIES=') === 0) {
@@ -81,7 +81,7 @@ function write_audit($action, $file_path) {
     $ip        = get_client_ip();
     $user      = 'www-data';
     $share     = 'compartida';
-    $env_file  = '/var/www/smbstack/smbstack.env';
+    $env_file  = '/etc/smbstack/smbstack.env';
     if (file_exists($env_file)) {
         foreach (file($env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
             if (strpos($line, 'SHARED_NAME=') === 0) {
@@ -102,6 +102,7 @@ function write_audit($action, $file_path) {
 // the bin instead of the item's own age. Recursive: a recycled folder
 // carries its contents with it.
 function recycle_touch($path) {
+    if (is_link($path)) return;
     @touch($path);
     if (is_dir($path)) {
         $items = @scandir($path);
@@ -260,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['newfile'])) {
         exit;
     }
     $target = $full_path . '/' . $file_name;
-    if (file_exists($target)) {
+    if (file_exists($target) || is_link($target)) {
         header('Location: ?path=' . urlencode($request) . '&msg=exists');
         exit;
     }
@@ -293,7 +294,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
     }
     $item_rel  = ltrim(preg_replace('/[\x00-\x1F]/', '', $_POST['recycle']), '/');
     $item_full = realpath($base_path . '/' . $item_rel);
-    $recycle_root = $base_path . '/.recycle/www-data/' . date('Ymd');
     $inside_recycle = $item_full && ($item_full === $recycle_real
                       || strpos($item_full, $recycle_real . DIRECTORY_SEPARATOR) === 0);
 
@@ -310,11 +310,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
             // today's date folder, e.g. "LOCALSEND/foto.jpg" ->
             // .recycle/www-data/20260622/LOCALSEND/foto.jpg
             $item_parent = dirname(ltrim($rel_from_base, '/'));
-            $dest_dir    = $item_parent === '.' ? $recycle_root : $recycle_root . '/' . $item_parent;
-            if (!is_dir($dest_dir)) mkdir($dest_dir, 0775, true);
+            $dest_rel    = '.recycle/www-data/' . date('Ymd')
+                           . ($item_parent === '.' ? '' : '/' . $item_parent);
+            $dest_dir    = $base_real;
+            foreach (array_filter(explode('/', $dest_rel), 'strlen') as $part) {
+                $dest_dir .= DIRECTORY_SEPARATOR . $part;
+                if (is_link($dest_dir) || (file_exists($dest_dir) && !is_dir($dest_dir))) {
+                    $dest_dir = false;
+                    break;
+                }
+                if (!is_dir($dest_dir) && !mkdir($dest_dir, 0775)) {
+                    $dest_dir = false;
+                    break;
+                }
+            }
+            if ($dest_dir === false) {
+                $recycle_msg = 'error';
+                header('Location: ?path=' . urlencode(dirname($item_rel) === '.' ? '' : dirname($item_rel)) . '&msg=error');
+                exit;
+            }
 
             $dest = $dest_dir . '/' . basename($item_full);
-            if (file_exists($dest)) $dest .= '_' . time();
+            if (file_exists($dest) || is_link($dest)) $dest .= '_' . time();
 
             if (!rename($item_full, $dest)) {
                 $recycle_msg = 'error';

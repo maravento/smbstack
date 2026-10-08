@@ -38,7 +38,7 @@
 - `inotify-tools`, `procps`, `coreutils`, `findutils`, `cron`, `util-linux`, `sed`, `grep` (checked by `tools/smbwatch.sh`)
 - `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd` (checked by `tools/smbload.sh`)
 - `zip`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbbk.sh`)
-- `findutils`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbreport.sh`)
+- `findutils`, `coreutils`, `util-linux`, `cron`, `php-cli` (checked by `tools/smbreport.sh`)
 
 ```bash
 apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
@@ -205,7 +205,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
         <li>Includes <code>smbwatch.sh</code>, a shared folder size monitor managed separately from the installer.</li>
         <li>Provides a configuration backup tool (<code>smbbk.sh</code>), run through cron monthly.</li>
         <li>Installs a disk usage report (<code>smbreport.sh</code>), run through cron daily at 03:00.</li>
-        <li>Saves the installation configuration to <code>/var/www/smbstack/smbstack.env</code> for future updates.</li>
+        <li>Saves the installation configuration to <code>/etc/smbstack/smbstack.env</code> for future updates.</li>
         <li>Keeps NetBIOS disabled by default. It can be enabled manually if required; see the NetBIOS section.</li>
       </ul>
     </td>
@@ -220,7 +220,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
         <li>Incluye <code>smbwatch.sh</code>, un monitor de espacio que se administra por separado y no depende del instalador.</li>
         <li>Proporciona una herramienta de respaldo de configuración (<code>smbbk.sh</code>), ejecutada mediante cron mensualmente.</li>
         <li>Instala un informe de uso de disco (<code>smbreport.sh</code>), ejecutado mediante cron diariamente a las 03:00.</li>
-        <li>Guarda la configuración de la instalación en <code>/var/www/smbstack/smbstack.env</code> para futuras actualizaciones.</li>
+        <li>Guarda la configuración de la instalación en <code>/etc/smbstack/smbstack.env</code> para futuras actualizaciones.</li>
         <li>Mantiene NetBIOS deshabilitado por defecto. Puede activarse manualmente si es necesario; consulte la sección NetBIOS.</li>
       </ul>
     </td>
@@ -258,9 +258,10 @@ smbstack/
 ├── acl/                         # Static access-control lists for Samba
 │   └── commonveto.txt              # Veto list for common unwanted file types (active by default in smb.conf)
 │
-├── conf/                        # Samba and rsyslog configuration
+├── conf/                        # Samba, rsyslog and Apache configuration
 │   ├── fullaudit.conf              # rsyslog full audit rule
-│   └── smb.conf                    # Samba main config (placeholders: your_user, compartida)
+│   ├── smb.conf                    # Samba main config (placeholders: your_user, compartida)
+│   └── smbweb.conf                 # Apache vhost (:3092/?tab=shared, ?tab=audit and ?tab=report)
 │
 ├── tools/                      # Background watchdog and maintenance scripts
 │   ├── smbbk.sh                    # Configuration backup for smbstack
@@ -277,7 +278,6 @@ smbstack/
 │   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool
 │   ├── smbaudit.html               # Audit log viewer UI
 │   ├── smbreport.html              # Disk report viewer UI
-│   ├── smbweb.conf                 # Apache vhost (:3092/?tab=shared, ?tab=audit and ?tab=report)
 │   └── sw.js                       # PWA service worker (app-shell cache only)
 │
 └── smbsetup.sh                 # Installer: install, update, uninstall, status
@@ -297,18 +297,23 @@ smbstack/
 ```
 /var/www/smbstack/
 ├── .size_cache/                # Folder size cache used by smbshared.php (www-data, pruned daily by cron)
-├── tools/                      # Deployed copy of tools/*.sh
-├── web/                        # Deployed copy of web/ (served by Apache on :3092)
-│   └── smbreport.json          # Disk report written by tools/smbreport.sh (root:www-data, 640)
+└── web/                        # Deployed copy of web/ (served by Apache on :3092)
+    └── smbreport.json          # Disk report written by tools/smbreport.sh (root:www-data, 640)
+
+/etc/smbstack/
+├── acl/                        # Deployed copy of acl/ (root:root, 644)
+│   └── commonveto.txt          # Veto list included by smb.conf
+├── tools/                      # Deployed copy of tools/*.sh (root:root, 755)
 └── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
 
-/etc/bak/smbstack/              # Archives written by tools/smbbk.sh (smbbk_<YYYYMMDD_HHMM>.zip, last 3 kept),
+/etc/bak/smbstack/              # Archives written by tools/smbbk.sh (smbbk_<YYYYMMDD_HHMMSS>.zip, last 3 kept),
                                 # run by --update before overwriting application code, and by its own monthly cron
 /etc/cron.d/smbstack            # All cron entries of the project, one file
 
 /var/log/smbwatch.log           # smbwatch.sh runtime log (root:root, 640)
-/var/log/smbload.log            # smbload.sh runtime log
+/var/log/smbload.log            # smbload.sh runtime log, rewritten on each run
 /var/log/smbstack.log           # smbbk.sh and smbreport.sh runtime log, shared
+smbsetup.log                    # In smbsetup.sh's own directory, rewritten on each run
 
 /home/$local_user/shared/       # Shared folder (independent of the installer)
 ├── .recycle/                   # Recycle Bin (smbguest/, www-data/, smbwatch/)
@@ -318,8 +323,6 @@ smbstack/
 /etc/logrotate.d/smbwatch       # Generated by installer (heredoc), rotates /var/log/smbwatch.log
 /var/log/samba/log.audit        # Created by rsyslog
 /var/log/samba/log.samba        # Created by installer, written directly by smbd
-
-/etc/samba/acl/commonveto.txt   # Copied from acl/commonveto.txt by the installer
 ```
 
 > Every cron entry of the project lives in `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` and `tools/smbbk.sh` add or remove their own line in that file.
@@ -426,7 +429,7 @@ sudo bash smbsetup.sh --uninstall
 |------|-----------|---------------|
 | `conf/smb.conf` | ⛔ not touched (user-customized) | ✅ restored from `.bak` if it exists (only created when the installer overwrote a pre-existing `smb.conf`; on a fresh install, no `.bak` exists and `smb.conf` is left untouched) |
 | `conf/fullaudit.conf` | ⛔ not touched (user-customized) | ✅ removed |
-| `web/smbweb.conf` | ⛔ not touched (user-customized) | ✅ removed |
+| `conf/smbweb.conf` | ⛔ not touched (user-customized) | ✅ removed |
 | `web/index.php` | ✅ overwritten | ✅ removed |
 | `web/smbaudit.html` | ✅ overwritten | ✅ removed |
 | `web/smbapi.php` | ✅ overwritten | ✅ removed |
@@ -437,8 +440,9 @@ sudo bash smbsetup.sh --uninstall
 | `web/icon.svg` | ✅ overwritten | ✅ removed |
 | `tools/smbbk.sh` | ✅ overwritten | ✅ removed (its cron entry is deregistered first) |
 | `tools/smbload.sh` | ✅ overwritten | ✅ removed |
+| `tools/smbreport.sh` | ✅ overwritten | ✅ removed (its cron entry is deregistered first) |
 | `tools/smbwatch.sh` | ✅ overwritten | ✅ removed |
-| `/var/www/smbstack/smbstack.env` | ⛔ preserved | ✅ removed |
+| `/etc/smbstack/smbstack.env` | ⛔ preserved | ✅ removed |
 | Shared folder (`/home/$local_user/shared/`) | ⛔ never touched | ⛔ never touched |
 
 > The shared folder is independent of the installer. To remove it, do so manually: `rm -rf /home/$local_user/shared`
@@ -451,13 +455,13 @@ sudo bash smbsetup.sh --uninstall
       <p>Before updating files, <code>--update</code> runs <code>tools/smbbk.sh</code>, which saves a backup in <code>/etc/bak/smbstack</code>.</p>
       <p>It only updates the application code: the web viewers in PHP and HTML and <code>tools/*.sh</code>.</p>
       <p>The configuration files deployed during the installation, <code>smb.conf</code>, <code>fullaudit.conf</code> and <code>smbweb.conf</code>, are never overwritten, since they may contain manual edits such as custom shares, <code>hosts allow</code> or interfaces.</p>
-      <p>To incorporate changes to those files after an update, compare them with the versions in <code>conf/</code> and <code>web/smbweb.conf</code> in the repository, then apply the ones you need manually.</p>
+      <p>To incorporate changes to those files after an update, compare them with the versions in <code>conf/</code> in the repository, then apply the ones you need manually.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p>Antes de actualizar los archivos, <code>--update</code> ejecuta <code>tools/smbbk.sh</code>, que guarda un respaldo en <code>/etc/bak/smbstack</code>.</p>
       <p>Solo actualiza el código de la aplicación: los visores web en PHP y HTML y <code>tools/*.sh</code>.</p>
       <p>Los archivos de configuración desplegados en la instalación, <code>smb.conf</code>, <code>fullaudit.conf</code> y <code>smbweb.conf</code>, nunca se sobrescriben, ya que pueden contener ediciones manuales como shares personalizados, <code>hosts allow</code> o interfaces.</p>
-      <p>Para incorporar cambios en esos archivos después de actualizar, compáralos con las versiones de <code>conf/</code> y <code>web/smbweb.conf</code> del repositorio y aplica manualmente los que necesites.</p>
+      <p>Para incorporar cambios en esos archivos después de actualizar, compáralos con las versiones de <code>conf/</code> del repositorio y aplica manualmente los que necesites.</p>
     </td>
   </tr>
 </table>
@@ -499,7 +503,30 @@ sudo bash smbsetup.sh --status
 | Web vhost (audit + shared) | `/etc/apache2/sites-available/smbweb.conf` |
 | Log rotation (Samba logs) | `/etc/logrotate.d/samba` |
 | Log rotation (`smbwatch.sh`) | `/etc/logrotate.d/smbwatch` |
-| Install config | `/var/www/smbstack/smbstack.env` |
+| Install config | `/etc/smbstack/smbstack.env` |
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <code>smbsetup.sh</code> writes the nine keys below during <b>install</b> and never overwrites the file on <b>update</b>. <code>smbwatch.sh install</code> adds two more of its own, <code>WATCH_LIMIT_GB</code> and <code>WATCH_EXCLUDE</code>; see the smbwatch section.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <code>smbsetup.sh</code> escribe las nueve claves de abajo durante <b>install</b> y no sobrescribe el archivo en <b>update</b>. <code>smbwatch.sh install</code> añade dos propias, <code>WATCH_LIMIT_GB</code> y <code>WATCH_EXCLUDE</code>; ver la sección de smbwatch.
+    </td>
+  </tr>
+</table>
+
+| Variable | Read by | Description | Descripción |
+|----------|---------|--------------|-------------|
+| `LOCAL_USER` | `smbbk.sh` | Non-root local user that owns the shared folder and the backups | Usuario local sin privilegios que posee la carpeta compartida y las copias |
+| `SHARED_NAME` | `smbshared.php` | Share name as the SMB clients see it | Nombre del recurso tal como lo ven los clientes SMB |
+| `SHARED_PATH` | `smbwatch.sh`, `smbreport.sh`, `smbshared.php` | Absolute path of the shared folder | Ruta absoluta de la carpeta compartida |
+| `SMB_NET` | `smbsetup.sh` | LAN subnet in CIDR form allowed to reach the share | Subred LAN en formato CIDR autorizada a acceder al recurso |
+| `SMB_IFACE` | `smbsetup.sh` | Interface Samba binds to | Interfaz a la que se enlaza Samba |
+| `SERVER_IP` | `smbsetup.sh`, `smbshared.php` | Server's own IPv4 on that interface | IPv4 del servidor en esa interfaz |
+| `SMBNAME` | `smbsetup.sh` | Samba account created for the share | Cuenta de Samba creada para el recurso |
+| `MAX_LOG_LINES` | `smbapi.php`, `smbaudit-diagnostic.php` | Maximum lines read from the current audit log per request; default `50000`. The audit viewer's own request uses a fixed limit in its JavaScript, so raising this does not change what the UI asks for | Máximo de líneas que se leen del log de auditoría vigente por petición; valor predeterminado `50000`. La petición del visor usa un límite fijo en su JavaScript, así que subir esta clave no cambia lo que pide la interfaz |
+| `TRUSTED_PROXIES` | `smbshared.php` | IPv4 addresses, comma-separated, whose `REMOTE_ADDR` is trusted to carry the real client IP in a header; default `127.0.0.1` | Direcciones IPv4 separadas por comas cuyo `REMOTE_ADDR` se considera fiable para traer la IP real del cliente en un encabezado; valor predeterminado `127.0.0.1` |
 
 <table>
   <tr>
@@ -571,7 +598,7 @@ sudo pdbedit -L
 |---|---|---|---|
 | `.recycle/smbguest/` | SMB clients on the LAN, through `vfs_recycle` (`smbguest`, set by `force user` in `smb.conf`) | Holds files deleted by users from Windows or Linux over the network | Guarda los archivos borrados por los usuarios desde Windows o Linux por la red |
 | `.recycle/www-data/` | The web interface running under Apache (`www-data`) | Holds files deleted from the browser panel | Guarda los archivos borrados desde el panel web |
-| `.recycle/smbwatch/` | `tools/smbwatch.sh` (`${LOCAL_USER:-root}:sambashare`) | Holds files moved out automatically when a monitored folder exceeds its size limit | Guarda los archivos retirados automáticamente cuando una carpeta monitoreada supera su límite de tamaño |
+| `.recycle/smbwatch/` | `tools/smbwatch.sh` (`root:root`) | Holds files moved out automatically when a monitored folder exceeds its size limit | Guarda los archivos retirados automáticamente cuando una carpeta monitoreada supera su límite de tamaño |
 
 <table>
   <tr>
@@ -819,19 +846,19 @@ sudo cat /etc/cron.d/smbstack
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbload.sh</code> is a service watchdog that checks that <code>smbd</code> and <code>winbind</code> are running. Neither unit has a <code>Restart=</code> policy configured, so they are not restarted automatically when they stop.</p>
       <p>It also checks that <code>smbwatch.sh</code> is still running and restarts it if it has stopped.</p>
-      <p>The installer adds <code>smbload.sh</code> to cron automatically. It runs every five minutes from <code>/var/www/smbstack/tools/</code>.</p>
+      <p>The installer adds <code>smbload.sh</code> to cron automatically. It runs every five minutes from <code>/etc/smbstack/tools/</code>.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbload.sh</code> es un watchdog de servicios que comprueba que <code>smbd</code> y <code>winbind</code> estén en ejecución. Ninguna de las dos unidades tiene configurada una política <code>Restart=</code>, por lo que no se reinician automáticamente cuando se detienen.</p>
       <p>También comprueba que <code>smbwatch.sh</code> siga ejecutándose y lo reinicia si ha dejado de hacerlo.</p>
-      <p>El instalador registra automáticamente <code>smbload.sh</code> en cron para que se ejecute cada cinco minutos desde <code>/var/www/smbstack/tools/</code>.</p>
+      <p>El instalador registra automáticamente <code>smbload.sh</code> en cron para que se ejecute cada cinco minutos desde <code>/etc/smbstack/tools/</code>.</p>
     </td>
   </tr>
 </table>
 
 ```bash
 # sudo cat /etc/cron.d/smbstack
-*/5 * * * * root /var/www/smbstack/tools/smbload.sh
+*/5 * * * * root /etc/smbstack/tools/smbload.sh
 ```
 
 > `smbload.sh` reads no configuration of its own. It only checks whether the watcher is running and calls `smbwatch.sh start` if it is not. Until `smbwatch.sh install` has been run from a terminal, that call aborts on its own key check, so `smbload.sh` logs a `-- alert` warning pointing at `smbwatch.log`, where the missing or invalid key is named.
@@ -848,6 +875,7 @@ sudo cat /etc/cron.d/smbstack
       <p><code>smbwatch.sh</code> is managed independently of the installer, through five actions: <code>install</code>, <code>uninstall</code>, <code>start</code>, <code>stop</code> and <code>status</code>.</p>
       <p><code>install</code> is the only action that changes <code>smbstack.env</code>: it asks for the two values, registers the <code>@reboot</code> entry and starts the watcher. It requires an interactive terminal and is run once. <code>uninstall</code> stops the watcher, removes its cron entry and deletes the two values.</p>
       <p><code>start</code> never writes: it validates the keys and launches the watcher. If a key is missing or invalid it aborts, naming each failure and telling the operator to run <code>install</code> first. This is the action cron runs on every boot, and the one <code>smbload.sh</code> uses to restart a stopped watcher.</p>
+      <p>The folder list is built once, when the watcher starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel are blocked at the share root. After creating one, run <code>stop</code> and <code>start</code> so the new folder is monitored.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbwatch.sh</code> vigila en tiempo real las carpetas de primer nivel y su contenido mediante <code>inotifywait</code>.</p>
@@ -855,6 +883,7 @@ sudo cat /etc/cron.d/smbstack
       <p><code>smbwatch.sh</code> se administra de forma independiente del instalador, mediante cinco acciones: <code>install</code>, <code>uninstall</code>, <code>start</code>, <code>stop</code> y <code>status</code>.</p>
       <p><code>install</code> es la única acción que modifica <code>smbstack.env</code>: solicita los dos valores, registra el inicio automático con <code>@reboot</code> y arranca el monitor. Requiere una terminal interactiva y se ejecuta una vez. <code>uninstall</code> detiene el monitor, elimina la entrada de cron y borra esos dos valores.</p>
       <p><code>start</code> nunca escribe: valida las claves y lanza el vigilante. Si falta una clave o es inválida, aborta nombrando cada fallo e indicando que se ejecute <code>install</code> primero. Esta es la acción que cron ejecuta en cada arranque, y la que usa <code>smbload.sh</code> para reiniciar un vigilante detenido.</p>
+      <p>La lista de carpetas se construye una sola vez, al arrancar el vigilante. Las carpetas de primer nivel solo las crea el administrador desde la consola del servidor, porque los clientes SMB y el panel web no pueden escribir en la raíz del recurso. Después de crear una, ejecuta <code>stop</code> y <code>start</code> para que quede vigilada.</p>
     </td>
   </tr>
 </table>
@@ -871,19 +900,19 @@ sudo cat /etc/cron.d/smbstack
 ```bash
 # Install (interactive: asks for the two keys, writes them, adds the @reboot
 # cron entry and starts the watcher). Run this once, from a terminal.
-sudo /var/www/smbstack/tools/smbwatch.sh install
+sudo /etc/smbstack/tools/smbwatch.sh install
 
 # Start
-sudo /var/www/smbstack/tools/smbwatch.sh start
+sudo /etc/smbstack/tools/smbwatch.sh start
 
 # Stop
-sudo /var/www/smbstack/tools/smbwatch.sh stop
+sudo /etc/smbstack/tools/smbwatch.sh stop
 
 # Status
-sudo /var/www/smbstack/tools/smbwatch.sh status
+sudo /etc/smbstack/tools/smbwatch.sh status
 
 # Uninstall (stops it, removes the cron entry and both keys)
-sudo /var/www/smbstack/tools/smbwatch.sh uninstall
+sudo /etc/smbstack/tools/smbwatch.sh uninstall
 ```
 
 <table>
@@ -960,9 +989,9 @@ ERROR: run 'smbwatch.sh install' first -- abort
 | `sudo bash smbbk.sh install` | Register the `@monthly` cron entry | Registrar la entrada mensual en cron |
 | `sudo bash smbbk.sh uninstall` | Remove the cron entry, keeping the archives | Quitar la entrada de cron, conservando los comprimidos |
 
-> Backs up SMBstack into `/etc/bak/smbstack/smbbk_<YYYYMMDD_HHMM>.zip`, keeping up to 3 archives. Paths that do not exist are skipped. Restore by unzipping it over `/`.
+> Backs up SMBstack into `/etc/bak/smbstack/smbbk_<YYYYMMDD_HHMMSS>.zip`, keeping up to 3 archives. Paths that do not exist are skipped. Restore by unzipping it over `/`.
 >
-> Respalda SMBstack en `/etc/bak/smbstack/smbbk_<YYYYMMDD_HHMM>.zip`, conservando hasta 3 comprimidos. Las rutas que no existan se omiten. Para restaurar, descomprímalo sobre `/`.
+> Respalda SMBstack en `/etc/bak/smbstack/smbbk_<YYYYMMDD_HHMMSS>.zip`, conservando hasta 3 comprimidos. Las rutas que no existan se omiten. Para restaurar, descomprímalo sobre `/`.
 
 <table width="100%">
   <tr>

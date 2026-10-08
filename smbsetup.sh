@@ -3,11 +3,19 @@
 #
 ################################################################################
 #
-# smbstack - Samba with Shared Folder, Recycle Bin and Audit
-# https://github.com/maravento/smbstack
+# smbsetup -- installer for smbstack
 #
-# LOG: smbsetup.log, in the directory this script is run from
-#      (rewritten on each run)
+# DESCRIPTION:
+# Installs, updates or uninstalls smbstack. Requires root.
+#
+# USAGE:
+# sudo bash smbsetup.sh --install      Fresh install
+# sudo bash smbsetup.sh --update       Refresh code and permissions
+# sudo bash smbsetup.sh --uninstall    Remove smbstack
+# sudo bash smbsetup.sh --status       Report the current state
+# sudo bash smbsetup.sh                Interactive menu
+#
+# LOG: smbsetup.log, in this script's directory
 #
 ################################################################################
 
@@ -93,14 +101,16 @@ done
 # VARIABLES
 # ------------------------------------------------------------------------------
 
-conf_dir="$script_dir/conf"
-web_dir="$script_dir/web"
-tools_dir="$script_dir/tools"
 acl_dir="$script_dir/acl"
+conf_dir="$script_dir/conf"
+tools_dir="$script_dir/tools"
+web_dir="$script_dir/web"
 smbstack_www="/var/www/smbstack"
 smbstack_web="$smbstack_www/web"
-smbstack_tools="$smbstack_www/tools"
-smbstack_env="$smbstack_www/smbstack.env"
+smbstack_etc="/etc/smbstack"
+smbstack_tools="$smbstack_etc/tools"
+smbstack_acl="$smbstack_etc/acl"
+smbstack_env="$smbstack_etc/smbstack.env"
 
 # validation -- one variable per thing validated; use directly with =~
 UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
@@ -191,7 +201,7 @@ check_port() {
 
 check_repo() {
     local missing_dir=0
-    for repo_subdir in "$conf_dir" "$web_dir" "$tools_dir" "$acl_dir"; do
+    for repo_subdir in "$acl_dir" "$conf_dir" "$tools_dir" "$web_dir"; do
         if [ ! -d "$repo_subdir" ] || [ -z "$(ls -A "$repo_subdir" 2>/dev/null)" ]; then
             missing_dir=1
             break
@@ -289,11 +299,20 @@ select_shared_folder() {
         setfacl -d -m g:sambashare:rwx "$share_dir"
         setfacl -d -m mask::rwx "$share_dir"
         # recycle bin
+        # Each channel is precreated and owned by its own writer, so no SMB
+        # client needs write access on .recycle itself. The direct mask blocks
+        # group write there; the default mask keeps it inside each channel.
         mkdir -p "$share_dir/.recycle"
         chown www-data:www-data "$share_dir/.recycle"
         chmod 755 "$share_dir/.recycle"
+        install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
+        install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
         setfacl -m g:sambashare:rwx "$share_dir/.recycle"
         setfacl -d -m g:sambashare:rwx "$share_dir/.recycle"
+        setfacl -m mask::r-x "$share_dir/.recycle"
+        setfacl -d -m mask::rwx "$share_dir/.recycle"
+        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data"
+        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data"
 
         if [ "$perms_ok" -eq 1 ]; then
             echo "Permissions OK"
@@ -313,11 +332,20 @@ select_shared_folder() {
         setfacl -d -m g:sambashare:rwx "$share_dir"
         setfacl -d -m mask::rwx "$share_dir"
         # recycle bin
+        # Each channel is precreated and owned by its own writer, so no SMB
+        # client needs write access on .recycle itself. The direct mask blocks
+        # group write there; the default mask keeps it inside each channel.
         mkdir -p "$share_dir/.recycle"
         chown www-data:www-data "$share_dir/.recycle"
         chmod 755 "$share_dir/.recycle"
+        install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
+        install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
         setfacl -m g:sambashare:rwx "$share_dir/.recycle"
         setfacl -d -m g:sambashare:rwx "$share_dir/.recycle"
+        setfacl -m mask::r-x "$share_dir/.recycle"
+        setfacl -d -m mask::rwx "$share_dir/.recycle"
+        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data"
+        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data"
     fi
 
     echo "Shared folder: $share_dir"
@@ -428,11 +456,9 @@ do_install() {
     mkdir -p "$smbstack_www/.size_cache"
     chown www-data:www-data "$smbstack_www/.size_cache"
     chmod 700 "$smbstack_www/.size_cache"
-    # every file in web/ is application code, except the Apache vhost, which
-    # belongs in sites-available and would be served if left in the DocumentRoot
+    # every file in web/ is application code
     for web_file in "$web_dir"/*; do
         [ -f "$web_file" ] || continue
-        [ "$(basename "$web_file")" = "smbweb.conf" ] && continue
         cp -f "$web_file" "$smbstack_web/"
     done
     chmod -R 755 "$smbstack_web"
@@ -440,7 +466,7 @@ do_install() {
 
     # apache vhosts (both in smbweb.conf)
     cp -f /etc/apache2/ports.conf{,.bak} &>/dev/null
-    cp -f "$web_dir/smbweb.conf" /etc/apache2/sites-available/smbweb.conf
+    cp -f "$conf_dir/smbweb.conf" /etc/apache2/sites-available/smbweb.conf
     a2ensite -q smbweb.conf
 
     # replace placeholders in deployed files (not in repo)
@@ -588,10 +614,10 @@ EOF
     sed -i -E "s#^([[:space:]]*)Require ip .*#\1Require ip 127.0.0.1 $net_answer#" /etc/apache2/sites-available/smbweb.conf
 
     # veto list required by the include line in smb.conf
-    mkdir -p /etc/samba/acl
-    cp -f "$acl_dir/commonveto.txt" /etc/samba/acl/commonveto.txt
-    chmod 644 /etc/samba/acl/commonveto.txt
-    chown root:root /etc/samba/acl/commonveto.txt
+    mkdir -p "$smbstack_acl"
+    cp -f "$acl_dir/commonveto.txt" "$smbstack_acl/commonveto.txt"
+    chmod 644 "$smbstack_acl/commonveto.txt"
+    chown root:root "$smbstack_acl/commonveto.txt"
 
     # rsyslog
     cp -f /etc/rsyslog.conf{,.bak} &>/dev/null
@@ -632,16 +658,6 @@ EOF
         "$smbstack_tools/smbwatch.sh" "$smbstack_tools/smbbk.sh" "$smbstack_tools/smbreport.sh"; do
         crontab -l 2>/dev/null | { grep -vF "$legacy_path" || true; } | crontab - 2>/dev/null || true
     done
-
-    if [ -x "$smbstack_tools/smbbk.sh" ]; then
-        echo "Registering smbbk.sh monthly cron entry ..."
-        "$smbstack_tools/smbbk.sh" install || warn "cron entry not registered -- alert"
-    fi
-
-    if [ -x "$smbstack_tools/smbreport.sh" ]; then
-        echo "Registering smbreport.sh daily cron entry ..."
-        "$smbstack_tools/smbreport.sh" install || warn "cron entry not registered -- alert"
-    fi
 
     systemctl daemon-reload
 
@@ -692,10 +708,11 @@ EOF
     proxy_list="127.0.0.1"
 
     # save install config
+    mkdir -p "$smbstack_etc"
     cat > "$smbstack_env" <<ENV
 # =============================================================================
 # SMBstack
-# /var/www/smbstack/smbstack.env
+# /etc/smbstack/smbstack.env
 # =============================================================================
 LOCAL_USER=$local_user
 SHARED_NAME=$folder_answer
@@ -722,6 +739,16 @@ TRUSTED_PROXIES=$proxy_list
 ENV
     chown root:www-data "$smbstack_env"
     chmod 640 "$smbstack_env"
+
+    if [ -x "$smbstack_tools/smbbk.sh" ]; then
+        echo "Registering smbbk.sh monthly cron entry ..."
+        "$smbstack_tools/smbbk.sh" install || warn "cron entry not registered -- alert"
+    fi
+
+    if [ -x "$smbstack_tools/smbreport.sh" ]; then
+        echo "Registering smbreport.sh daily cron entry ..."
+        "$smbstack_tools/smbreport.sh" install || warn "cron entry not registered -- alert"
+    fi
 
     echo ""
     echo "Audit log : /var/log/samba/log.audit"
@@ -765,20 +792,13 @@ do_update() {
     echo ""
 
     # every file in web/ is application code and is always (re)deployed, which
-    # also heals installs from before a file was added. The Apache vhost is the
-    # only exception: it lives in sites-available, do_install wrote the network
-    # and the paths into it, and a copy would undo that.
+    # also heals installs from before a file was added. The Apache vhost is not
+    # here: it lives in sites-available, do_install wrote the network and the
+    # paths into it, and a copy would undo that.
     for source_file in "$web_dir"/*; do
         [ -f "$source_file" ] || continue
         base_name="$(basename "$source_file")"
-        case "$base_name" in
-            smbweb.conf)
-                continue
-                ;;
-            *)
-                dest_path="$smbstack_web/$base_name"
-                ;;
-        esac
+        dest_path="$smbstack_web/$base_name"
         cp -f "$source_file" "$dest_path"
         escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$dest_path"
@@ -787,6 +807,7 @@ do_update() {
     done
 
     # tools
+    mkdir -p "$smbstack_tools"
     for tool_file in "$tools_dir"/*.sh; do
         [ -f "$tool_file" ] || continue
         base_name="$(basename "$tool_file")"
@@ -862,6 +883,9 @@ do_uninstall() {
 
     # project web directory
     rm -rf "$smbstack_www"
+
+    # administrative tree: tools, veto list and install config
+    rm -rf "$smbstack_etc"
 
     # rsyslog
     rm -f /etc/rsyslog.d/fullaudit.conf
