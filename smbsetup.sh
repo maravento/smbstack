@@ -650,12 +650,6 @@ EOF
     # cron: service watchdog
     cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh"
 
-    # legacy entries in root's crontab, from versions before /etc/cron.d
-    for legacy_path in "$share_dir/.recycle/" "$smbstack_tools/smbload.sh" \
-        "$smbstack_tools/smbwatch.sh" "$smbstack_tools/smbbk.sh" "$smbstack_tools/smbreport.sh"; do
-        crontab -l 2>/dev/null | { grep -vF "$legacy_path" || true; } | crontab - 2>/dev/null || true
-    done
-
     systemctl daemon-reload
 
     # detect server IP from SMB_IFACE
@@ -900,15 +894,6 @@ do_uninstall() {
 
     # cron entries
     rm -f /etc/cron.d/smbstack
-
-    # legacy entries in root's crontab, from versions before /etc/cron.d.
-    # Matched by full command/path, so an unrelated cron job that merely
-    # mentions "smbload.sh" or ".recycle" is not swept away too.
-    for legacy_path in "${uninstall_shared_path:-}/.recycle/" "$smbstack_tools/smbload.sh" \
-        "$smbstack_tools/smbwatch.sh" "$smbstack_tools/smbbk.sh" "$smbstack_tools/smbreport.sh"; do
-        [ "$legacy_path" = "/.recycle/" ] && continue
-        crontab -l 2>/dev/null | { grep -vF "$legacy_path" || true; } | crontab - 2>/dev/null || true
-    done
 
     # samba packages
     DEBIAN_FRONTEND=noninteractive apt-get remove -y samba samba-common samba-common-bin smbclient winbind cifs-utils

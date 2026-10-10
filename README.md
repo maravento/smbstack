@@ -7,7 +7,7 @@
 
 <!-- markdownlint-disable MD033 -->
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>Many small and medium-sized businesses need to share files on their local network. They may also need to recover deleted files, review access records, manage files through a browser and control storage usage. Dedicated NAS devices often provide these functions, but their cost can be a barrier in some environments.</p>
@@ -30,7 +30,18 @@
 
 ---
 
-**⚠️ WARNING:** Tested on Ubuntu 24.04/26.04 LTS. Use on other versions or distributions is at your own risk.
+### ⚠️ WARNING
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Tested on Ubuntu 24.04/26.04 LTS. Use on other versions or distributions is at your own risk.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Probado en Ubuntu 24.04/26.04 LTS. El uso en otras versiones o distribuciones queda bajo responsabilidad de quien lo instale.</p>
+    </td>
+  </tr>
+</table>
 
 - Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
 - `rsyslog`, `logrotate`
@@ -48,7 +59,7 @@ apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotat
 
 The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbsetup.sh` itself.
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <strong>Important</strong>
@@ -73,7 +84,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
 
 ### Install
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       Download the repository and run the installer:
@@ -92,7 +103,7 @@ sudo bash smbsetup.sh
 sudo bash smbsetup.sh --install
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       The installer will prompt for:
@@ -110,7 +121,7 @@ sudo bash smbsetup.sh --install
 | Samba username | Samba account to create | Cuenta de Samba a crear |
 | Overwrite smb.conf | Only asked if `/etc/samba/smb.conf` already exists | Solo se pregunta si `/etc/samba/smb.conf` ya existe |
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>Set <code>SMBSTACK_IFACE</code> to skip the interactive interface selection. For example:</p>
@@ -133,7 +144,7 @@ sudo bash smbsetup.sh --install
 
 ### Update & Uninstall
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       To update or uninstall SMBstack, download the updated repository, enter the folder and run:
@@ -175,7 +186,7 @@ sudo bash smbsetup.sh --uninstall
 >
 > La carpeta compartida es independiente del instalador. Para eliminarla, hazlo manualmente: `rm -rf /home/$local_user/shared`
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>Before updating files, <code>--update</code> runs <code>tools/smbbk.sh</code>, which saves a backup in <code>/etc/bak/smbstack</code>.</p>
@@ -198,7 +209,7 @@ sudo bash smbsetup.sh --uninstall
 sudo bash smbsetup.sh --status
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>Shows the status of the <code>smbd</code> and <code>winbind</code> services, the status of Apache port <code>3092</code>, the last five audit log entries and a <code>testparm</code> summary.</p>
@@ -211,7 +222,7 @@ sudo bash smbsetup.sh --status
 
 ### Config
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       After installation, the main configuration files are:
@@ -254,7 +265,7 @@ sudo bash smbsetup.sh --status
 | `MAX_LOG_LINES` | `smbapi.php`, `smbaudit-diagnostic.php` | Maximum lines read from the current audit log per request; default `50000`. The audit viewer's own request uses a fixed limit in its JavaScript, so raising this does not change what the UI asks for | Máximo de líneas que se leen del log de auditoría vigente por petición; valor predeterminado `50000`. La petición del visor usa un límite fijo en su JavaScript, así que subir esta clave no cambia lo que pide la interfaz |
 | `TRUSTED_PROXIES` | `smbshared.php` | IPv4 addresses, comma-separated, whose `REMOTE_ADDR` is trusted to carry the real client IP in a header; default `127.0.0.1` | Direcciones IPv4 separadas por comas cuyo `REMOTE_ADDR` se considera fiable para traer la IP real del cliente en un encabezado; valor predeterminado `127.0.0.1` |
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbstack.env</code> sets <code>TRUSTED_PROXIES="127.0.0.1"</code> by default.</p>
@@ -283,7 +294,7 @@ tail -f /var/log/samba/log.audit
 sudo pdbedit -L
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>To use a shared folder located outside <code>/home/$local_user/</code>, edit <code>/etc/samba/smb.conf</code> and <code>/etc/apache2/sites-available/smbweb.conf</code> manually after the installation.</p>
@@ -296,7 +307,7 @@ sudo pdbedit -L
 
 ### Recycle Bin
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>SMBstack uses the Samba <code>vfs_recycle</code> module to redirect deleted files to a hidden recycle bin, instead of removing them permanently. The bin is stored inside the shared folder, under <code>.recycle/</code>.</p>
@@ -309,7 +320,7 @@ sudo pdbedit -L
 
 #### Recycle bin channels
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>SMBstack uses three independent channels to write to the recycle bin, each running under a different system context:</p>
@@ -326,7 +337,7 @@ sudo pdbedit -L
 | `.recycle/www-data/` | The web interface running under Apache (`www-data`) | Holds files deleted from the browser panel | Guarda los archivos borrados desde el panel web |
 | `.recycle/smbwatch/` | `tools/smbwatch.sh` (`root:root`) | Holds files moved out automatically when a monitored folder exceeds its size limit | Guarda los archivos retirados automáticamente cuando una carpeta monitoreada supera su límite de tamaño |
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       This is why the recycle bin directory contains one subdirectory per channel:
@@ -352,12 +363,12 @@ sudo pdbedit -L
 ```
 
 > the recycle bin lives inside the shared folder itself, so that recycling a file is a `mv` within the same filesystem: instantaneous and without copying data, something that would not happen if the bin were on another disk. For the details of each channel, see the *Web Interface*, *smbwatch* and *Configuration reference* sections.
-
+>
 > la papelera vive dentro de la propia carpeta compartida para que reciclar un archivo sea un `mv` dentro del mismo sistema de archivos: instantáneo y sin copiar datos, algo que no ocurriría si la papelera estuviera en otro disco. Para conocer el detalle de cada canal, consulta las secciones *Web Interface*, *smbwatch* y *Configuration reference*.
 
 #### Recycle timestamp
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The weekly cleanup deletes items based on their modification date. Each channel therefore updates that date when moving an item to the recycle bin. Otherwise, an old file could be deleted during the next cleanup even though it had only just been recycled.</p>
@@ -382,7 +393,7 @@ sudo pdbedit -L
 
 #### File versioning
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>When <code>recycle:versions = yes</code> is active, deleting a file that already exists in the recycle bin does not overwrite it. The new copy is kept alongside the original with the <code>Copy #N of</code> prefix:</p>
@@ -399,7 +410,7 @@ sudo pdbedit -L
 └── Copy #1 of report.docx  ← second deletion of the same file
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       To exclude specific file types from versioning, use <code>recycle:noversions</code>. These types are still recycled, but repeated deletions <strong>overwrite</strong> the previous copy in the bin rather than creating a numbered duplicate:
@@ -418,7 +429,7 @@ recycle:versions = yes
 recycle:noversions = *.dat,*.ini
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       Use <code>noversions</code> for files where accumulating copies adds no value: runtime data files, config dumps, ini snapshots, and similar.
@@ -446,7 +457,7 @@ recycle:noversions = *.dat,*.ini
 
 #### Automatic cleanup
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The installer registers a weekly cron job, run as <code>root</code>, that removes recycled files older than 7 days:</p>
@@ -465,7 +476,7 @@ recycle:noversions = *.dat,*.ini
 >
 > Como la limpieza se ejecuta una vez por semana y elimina elementos con más de seis días, estos permanecen en la papelera entre 7 y casi 14 días, según cuándo se hayan movido allí.
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       To adjust the retention period, edit the project cron file. To inspect its entries, display the file:
@@ -488,7 +499,7 @@ sudo cat /etc/cron.d/smbstack
 
 ### Full Audit
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>SMBstack uses the Samba <code>vfs_full_audit</code> module to record file operations in <code>/var/log/samba/log.audit</code> through <code>rsyslog</code>. Only successful operations are recorded; failures are excluded to keep the log clean.</p>
@@ -521,7 +532,7 @@ sudo cat /etc/cron.d/smbstack
 
 ##### Caveats
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <ul>
@@ -542,7 +553,7 @@ sudo cat /etc/cron.d/smbstack
 
 ##### Why `openat` is not audited
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p><code>openat</code> was evaluated and excluded from <code>full_audit:success</code> by default.</p>
@@ -567,7 +578,7 @@ sudo cat /etc/cron.d/smbstack
 
 ### smbload
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbload.sh</code> is a service watchdog that checks that <code>smbd</code> and <code>winbind</code> are running. Neither unit has a <code>Restart=</code> policy configured, so they are not restarted automatically when they stop.</p>
@@ -588,12 +599,12 @@ sudo cat /etc/cron.d/smbstack
 ```
 
 > `smbload.sh` reads no configuration of its own. It only checks whether the watcher is running and calls `smbwatch.sh start` if it is not. Until `smbwatch.sh install` has been run from a terminal, that call aborts on its own key check, so `smbload.sh` logs a `-- alert` warning pointing at `smbwatch.log`, where the missing or invalid key is named.
-
+>
 > `smbload.sh` no lee configuración propia. Solo comprueba si el vigilante corre y llama a `smbwatch.sh start` si no. Hasta que se haya ejecutado `smbwatch.sh install` desde un terminal, esa llamada aborta en su propia verificación de claves, así que `smbload.sh` registra un aviso `-- alert` que apunta a `smbwatch.log`, donde se nombra la clave que falta o es inválida.
 
 ### smbwatch
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbwatch.sh</code> monitors first-level subfolders and their contents in real time with <code>inotifywait</code>.</p>
@@ -619,9 +630,18 @@ sudo cat /etc/cron.d/smbstack
 | `WATCH_LIMIT_GB` | `10` | Size limit per monitored folder, in GB | Límite de tamaño por carpeta monitoreada, en GB |
 | `WATCH_EXCLUDE` | `NONE` | Comma-separated folder names excluded from monitoring (e.g. `FINANCE,LEGAL`) | Nombres de carpetas separados por comas excluidas del monitoreo |
 
-> The watcher checks a file when writing finishes or when the file arrives by a move or rename. This prevents a file moved from an excluded folder from bypassing the limit. Renaming a file inside a folder that is already over the limit also sends it to the recycle bin. Moving an entire folder is not monitored.
->
-> smbwatch revisa los archivos cuando termina su escritura o cuando llegan por movimiento o renombrado; por eso, mover un archivo desde una carpeta excluida no evita el límite. Si renombras un archivo dentro de una carpeta que ya superó el límite, también se moverá a la papelera. El monitor no detecta el traslado de una carpeta completa.
+#### File Checks
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      The watcher checks a file when writing finishes or when the file arrives by a move or rename. This prevents a file moved from an excluded folder from bypassing the limit. Renaming a file inside a folder that is already over the limit also sends it to the recycle bin. Moving an entire folder is not monitored.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      smbwatch revisa los archivos cuando termina su escritura o cuando llegan por movimiento o renombrado; por eso, mover un archivo desde una carpeta excluida no evita el límite. Si renombras un archivo dentro de una carpeta que ya superó el límite, también se moverá a la papelera. El monitor no detecta el traslado de una carpeta completa.
+    </td>
+  </tr>
+</table>
 
 ```bash
 # Install (interactive: asks for the two keys, writes them, adds the @reboot
@@ -641,7 +661,7 @@ sudo /etc/smbstack/tools/smbwatch.sh status
 sudo /etc/smbstack/tools/smbwatch.sh uninstall
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p><code>start</code> on a host where <code>install</code> was never run reports every missing key and then aborts, naming the action to run. It collects all the failures first, so one pass is enough to fix them:</p>
@@ -659,7 +679,7 @@ ERROR: 2 key(s) invalid in smbstack.env
 ERROR: run 'smbwatch.sh install' first -- abort
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The list of monitored folders is built once, when <code>smbwatch</code> starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel cannot create them at the root of the shared folder.</p>
@@ -678,7 +698,7 @@ ERROR: run 'smbwatch.sh install' first -- abort
 
 ### smbbk
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbbk.sh</code> creates a single compressed archive with SMBstack's configuration. It contains:</p>
@@ -744,7 +764,7 @@ ERROR: run 'smbwatch.sh install' first -- abort
 
 ### NetBIOS
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>NetBIOS is a legacy protocol with security limitations, among them unauthenticated name resolution and exposure to spoofing and name poisoning attacks, such as NBT-NS poisoning.</p>
@@ -823,7 +843,7 @@ smbstack/
 └── smbsetup.sh                 # Installer: install, update, uninstall, status
 ```
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       Files and directories generated at runtime (not included in the repository):
@@ -865,21 +885,24 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 /var/log/samba/log.samba        # Created by installer, written directly by smbd
 ```
 
-> Every cron entry of the project lives in `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` and `tools/smbbk.sh` add or remove their own line in that file.
->
-> Each line names the user that runs the task, as required by the `/etc/cron.d` format. The scripts add or remove only their own entries in `/etc/cron.d/smbstack`.
->
-> `--uninstall` deletes the file.
->
-> Installations made before this change keep their entries in root's crontab. The installer removes them, identified by the full script path.
->
-> Todas las entradas de cron del proyecto viven en `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` y `tools/smbbk.sh` agregan o eliminan su propia línea en ese archivo.
->
-> Cada línea indica el usuario que ejecutará la tarea, como requiere el formato de `/etc/cron.d`. Los scripts agregan o eliminan únicamente sus propias entradas en `/etc/cron.d/smbstack`.
->
-> `--uninstall` elimina el archivo.
->
-> Las instalaciones anteriores a este cambio conservan sus entradas en el crontab de root. El instalador las retira, identificadas por la ruta completa del script.
+### Scheduled Tasks
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Every cron entry of the project lives in <code>/etc/cron.d/smbstack</code>. <code>smbsetup.sh</code>, <code>tools/smbwatch.sh</code>, <code>tools/smbreport.sh</code> and <code>tools/smbbk.sh</code> add or remove their own line in that file.</p>
+      <p>Each line names the user that runs the task, as required by the <code>/etc/cron.d</code> format. The scripts add or remove only their own entries in <code>/etc/cron.d/smbstack</code>.</p>
+      <p><code>--uninstall</code> deletes the file.</p>
+      <p>Installations made before this change keep their entries in root's crontab. The installer removes them, identified by the full script path.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Todas las entradas de cron del proyecto viven en <code>/etc/cron.d/smbstack</code>. <code>smbsetup.sh</code>, <code>tools/smbwatch.sh</code>, <code>tools/smbreport.sh</code> y <code>tools/smbbk.sh</code> agregan o eliminan su propia línea en ese archivo.</p>
+      <p>Cada línea indica el usuario que ejecutará la tarea, como requiere el formato de <code>/etc/cron.d</code>. Los scripts agregan o eliminan únicamente sus propias entradas en <code>/etc/cron.d/smbstack</code>.</p>
+      <p><code>--uninstall</code> elimina el archivo.</p>
+      <p>Las instalaciones anteriores a este cambio conservan sus entradas en el crontab de root. El instalador las retira, identificadas por la ruta completa del script.</p>
+    </td>
+  </tr>
+</table>
 
 ## WEB INTERFACE
 
@@ -889,7 +912,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 [![smbstack-main](./img/smbstack-main.png)](https://github.com/maravento/smbstack)
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>Each view can be opened in two ways:</p>
@@ -912,7 +935,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 ### SMBaudit
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The audit view is one of the three tabs of the web panel. It is accessed through <code>http://localhost:3092/?tab=audit</code>.</p>
@@ -935,7 +958,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 ### SMBshared
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The web panel is an Apache VirtualHost listening on port <code>3092</code>. It is accessed through <code>http://localhost:3092/</code> and has three tabs: <strong>Shared</strong>, <strong>Audit</strong> and <strong>Report</strong>. Each tab corresponds to a separate page, which <code>index.php</code> loads inside a frame.</p>
@@ -956,7 +979,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 [![smbshared](./img/smbshared.png)](https://github.com/maravento/smbstack)
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <ul>
@@ -981,7 +1004,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 ### SMBreport
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The report view is the third tab of the web panel. It is accessed through <code>http://localhost:3092/?tab=report</code>.</p>
@@ -1006,7 +1029,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 ---
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <b>What SMBstack does:</b>
@@ -1067,7 +1090,7 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 ---
 
-<table>
+<table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       This project is designed for use on a local network (LAN). It does not include the security hardening needed for direct exposure to the internet. If internet access is required, an on-demand tunnel is recommended instead of opening ports directly. This enables access when needed without leaving the server permanently exposed.
@@ -1078,25 +1101,37 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
   </tr>
 </table>
 
-> **CSRF protection.** `web/smbshared.php` has no login by design. Guest access for the whole LAN, and for the tunnel when it is enabled, is intentional.
->
-> What it does have is a per-session token on the four forms that change state: upload, new folder, new file and recycle. A POST is accepted only if the page was actually loaded first.
->
-> This blocks a malicious site from silently auto-submitting a form to your server through a visitor's browser. It does not restrict who can use the browser itself: that is still governed by network reachability, LAN or tunnel.
->
-> **Protección CSRF.** `web/smbshared.php` no tiene login por diseño. El acceso de invitado para toda la LAN, y para el túnel cuando está activo, es intencional.
->
-> Lo que sí tiene es un token por sesión en los cuatro formularios que modifican estado: subir, nueva carpeta, nuevo archivo y papelera. Un POST se acepta solo si la página se cargó antes.
->
-> Esto impide que un sitio malicioso envíe en silencio un formulario a su servidor a través del navegador de un visitante. No restringe quién puede usar el navegador: eso lo sigue gobernando el alcance de red, LAN o túnel.
+### CSRF Protection
 
-> **Folder size display.** The total size shown for the folder being browsed in `web/smbshared.php` is cached for 30 seconds per path, to avoid re-walking a potentially large subtree on every page load.
->
-> The number can therefore lag up to 30 seconds behind the real content. That is purely cosmetic: quota enforcement is handled independently by `smbwatch.sh` and its own size checks, not by this displayed value.
->
-> **Tamaño de carpeta mostrado.** El tamaño total que se muestra para la carpeta que se está navegando en `web/smbshared.php` se cachea 30 segundos por ruta, para evitar recorrer un subárbol potencialmente grande en cada carga de página.
->
-> Por eso el número puede quedar hasta 30 segundos desactualizado respecto al contenido real. Es puramente cosmético: el cumplimiento de la cuota lo maneja de forma independiente `smbwatch.sh` con sus propios chequeos de tamaño, no este valor mostrado.
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p><strong>CSRF protection.</strong> <code>web/smbshared.php</code> has no login by design. Guest access for the whole LAN, and for the tunnel when it is enabled, is intentional.</p>
+      <p>What it does have is a per-session token on the four forms that change state: upload, new folder, new file and recycle. A POST is accepted only if the page was actually loaded first.</p>
+      <p>This blocks a malicious site from silently auto-submitting a form to your server through a visitor's browser. It does not restrict who can use the browser itself: that is still governed by network reachability, LAN or tunnel.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p><strong>Protección CSRF.</strong> <code>web/smbshared.php</code> no tiene login por diseño. El acceso de invitado para toda la LAN, y para el túnel cuando está activo, es intencional.</p>
+      <p>Lo que sí tiene es un token por sesión en los cuatro formularios que modifican estado: subir, nueva carpeta, nuevo archivo y papelera. Un POST se acepta solo si la página se cargó antes.</p>
+      <p>Esto impide que un sitio malicioso envíe en silencio un formulario a su servidor a través del navegador de un visitante. No restringe quién puede usar el navegador: eso lo sigue gobernando el alcance de red, LAN o túnel.</p>
+    </td>
+  </tr>
+</table>
+
+### Folder Size Display
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p><strong>Folder size display.</strong> The total size shown for the folder being browsed in <code>web/smbshared.php</code> is cached for 30 seconds per path, to avoid re-walking a potentially large subtree on every page load.</p>
+      <p>The number can therefore lag up to 30 seconds behind the real content. That is purely cosmetic: quota enforcement is handled independently by <code>smbwatch.sh</code> and its own size checks, not by this displayed value.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p><strong>Tamaño de carpeta mostrado.</strong> El tamaño total que se muestra para la carpeta que se está navegando en <code>web/smbshared.php</code> se cachea 30 segundos por ruta, para evitar recorrer un subárbol potencialmente grande en cada carga de página.</p>
+      <p>Por eso el número puede quedar hasta 30 segundos desactualizado respecto al contenido real. Es puramente cosmético: el cumplimiento de la cuota lo maneja de forma independiente <code>smbwatch.sh</code> con sus propios chequeos de tamaño, no este valor mostrado.</p>
+    </td>
+  </tr>
+</table>
 
 **Optional tunnel:**
 - [Cloudflare Tunnel with Zero Trust Recommended](https://raw.githubusercontent.com/maravento/vault/master/scripts/bash/cftunnel.sh)

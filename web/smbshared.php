@@ -151,6 +151,13 @@ if (!$full_path
     $request   = '';
 }
 
+// Every alias of the same directory ("", ".", "child/..") must carry the
+// same depth. The handlers below derive it from $request, so rebuild it
+// from the validated real path instead of the raw parameter.
+$request = $full_path === $base_real
+    ? ''
+    : substr($full_path, strlen($base_real) + 1);
+
 // Upload handler
 $upload_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload'])) {

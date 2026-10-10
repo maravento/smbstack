@@ -308,9 +308,6 @@ install_module() {
     cron_d_set "$script_path" "@reboot root $script_path start"
     log "INFO: added to cron @reboot"
 
-    # legacy entry in root's crontab, from versions before /etc/cron.d
-    crontab -l 2>/dev/null | { grep -vF "$script_path" || true; } | crontab - 2>/dev/null || true
-
     start
 }
 
