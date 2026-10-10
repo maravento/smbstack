@@ -610,9 +610,6 @@ EOF
         apply_smb_conf_interfaces
     fi
 
-    # limit the web panel to loopback and the chosen LAN
-    sed -i -E "s#^([[:space:]]*)Require ip .*#\1Require ip 127.0.0.1 $net_answer#" /etc/apache2/sites-available/smbweb.conf
-
     # veto list required by the include line in smb.conf
     mkdir -p "$smbstack_acl"
     cp -f "$acl_dir/commonveto.txt" "$smbstack_acl/commonveto.txt"
@@ -670,12 +667,11 @@ EOF
     # Drop any prior Listen line for this port (a stale IP or a bare
     # "Listen 3092") before adding the current ones.
     sed -i -E "/^Listen [^[:space:]]*:3092\$/d; /^Listen 3092\$/d" /etc/apache2/ports.conf
-    # The LAN IP plus loopback, needed for a local tunnel daemon like
-    # cloudflared, which connects to Apache via 127.0.0.1 (see
-    # TRUSTED_PROXIES).
-    echo "Listen ${detected_ip}:3092" >> /etc/apache2/ports.conf
+    # Loopback only, for a local tunnel daemon like cloudflared, which
+    # connects to Apache via 127.0.0.1 (see TRUSTED_PROXIES). Not
+    # reachable from the LAN.
     echo "Listen 127.0.0.1:3092" >> /etc/apache2/ports.conf
-    info "Port 3092 bound to ${detected_ip} and 127.0.0.1"
+    info "Port 3092 bound to 127.0.0.1"
 
     systemctl restart smbd winbind rsyslog apache2
 

@@ -67,280 +67,6 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
   </tr>
 </table>
 
-## WEB INTERFACE
-
----
-
-### Main Menu
-
-[![smbstack-main](./img/smbstack-main.png)](https://github.com/maravento/smbstack)
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <p>Each view can be opened in two ways:</p>
-      <ul>
-        <li><code>http://localhost:3092/?tab=shared</code>, <code>?tab=audit</code> or <code>?tab=report</code>: opens the panel on the corresponding tab and keeps the tab bar visible.</li>
-        <li><code>http://localhost:3092/shared/</code>, <code>/audit/</code> or <code>/report/</code>: opens only the selected view, without the tab bar.</li>
-      </ul>
-      <p>Both forms of access are valid.</p>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <p>Cada vista puede abrirse de dos maneras:</p>
-      <ul>
-        <li><code>http://localhost:3092/?tab=shared</code>, <code>?tab=audit</code> o <code>?tab=report</code>: abre el panel en la pestaña correspondiente y mantiene visible la barra de pestañas.</li>
-        <li><code>http://localhost:3092/shared/</code>, <code>/audit/</code> o <code>/report/</code>: abre únicamente la vista seleccionada, sin la barra de pestañas.</li>
-      </ul>
-      <p>Ambas formas de acceso son válidas.</p>
-    </td>
-  </tr>
-</table>
-
-### SMBaudit
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <p>The audit view is one of the three tabs of the web panel. It is accessed through <code>http://localhost:3092/?tab=audit</code>.</p>
-      <p>The audit view reads <code>/var/log/samba/log.audit</code> and its rotated files. <code>smbapi.php</code> returns the records as JSON. The maximum number returned per request is set by <code>MAX_LOG_LINES</code> in <code>smbstack.env</code>.</p>
-      <p>Date, IP, action and text filters are applied in the browser to the records already received. You can view the results in pages of 50, 100, 200 or 500 records.</p>
-      <p>The <strong>Export PDF</strong> button opens the browser's print window with three columns: date and time, IP and file. You can save or print the document there; the server does not generate the PDF.</p>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <p>La vista de auditoría es una de las tres pestañas del panel web. Se accede mediante <code>http://localhost:3092/?tab=audit</code>.</p>
-      <p>La vista consulta <code>/var/log/samba/log.audit</code> y sus archivos rotados. <code>smbapi.php</code> lee los registros y los entrega en formato JSON. El máximo por petición se configura con <code>MAX_LOG_LINES</code> en <code>smbstack.env</code>.</p>
-      <p>Los filtros de fecha, IP, acción y texto se aplican en el navegador a los registros recibidos. Puedes ver los resultados en páginas de 50, 100, 200 o 500 registros.</p>
-      <p>El botón <strong>Export PDF</strong> abre la ventana de impresión del navegador con tres columnas: fecha y hora, IP y archivo. Desde allí puedes guardar o imprimir el documento; el servidor no genera el PDF.</p>
-    </td>
-  </tr>
-</table>
-
-[![smbaudit](./img/smbaudit.png)](https://github.com/maravento/smbstack)
-
-[![smbstack-botton](./img/smbstack-botton.png)](https://github.com/maravento/smbstack)
-
-### SMBshared
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <p>The web panel is an Apache VirtualHost listening on port <code>3092</code>. It is accessed through <code>http://localhost:3092/</code> and has three tabs: <strong>Shared</strong>, <strong>Audit</strong> and <strong>Report</strong>. Each tab corresponds to a separate page, which <code>index.php</code> loads inside a frame.</p>
-      <p>The <strong>Shared</strong> tab displays the contents of the shared folder. From there a document can be opened, downloaded or moved to the recycle bin.</p>
-      <p>The root of the shared folder is read-only: you cannot upload files, create folders or delete items there. These actions are available inside subfolders.</p>
-      <p>Apache runs the panel as the <code>www-data</code> user, which receives read and write permissions on the shared folder through an ACL set during the installation.</p>
-      <p>The light and dark themes are selected from the top bar. The selection is stored in the browser and applied to the three tabs.</p>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <p>El panel web es un VirtualHost de Apache que escucha en el puerto <code>3092</code>. Se accede mediante <code>http://localhost:3092/</code> y tiene tres pestañas: <strong>Shared</strong>, <strong>Audit</strong> y <strong>Report</strong>. Cada pestaña corresponde a una página independiente, que <code>index.php</code> carga dentro de un marco.</p>
-      <p>La pestaña <strong>Shared</strong> muestra el contenido de la carpeta compartida. Desde allí se puede abrir un documento, descargarlo o moverlo a la papelera de reciclaje.</p>
-      <p>La raíz de la carpeta compartida es de solo lectura: desde allí no puedes subir archivos, crear carpetas ni eliminar elementos. Estas acciones están disponibles dentro de las subcarpetas.</p>
-      <p>Apache ejecuta el panel como el usuario <code>www-data</code>, que recibe permisos de lectura y escritura sobre la carpeta compartida mediante una ACL establecida durante la instalación.</p>
-      <p>Los temas claro y oscuro se seleccionan desde la barra superior. La selección se guarda en el navegador y se aplica a las tres pestañas.</p>
-    </td>
-  </tr>
-</table>
-
-[![smbshared](./img/smbshared.png)](https://github.com/maravento/smbstack)
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <ul>
-        <li>Inside a subfolder, the toolbar allows uploading one or more files, creating folders and reloading the view. Each operation is recorded in the audit log together with the client's IP address.</li>
-        <li>Images and PDF files open in a modal through the <strong>Preview</strong> button, without being downloaded. For the remaining file types, the <strong>View</strong> button is kept, which opens the file in a new tab.</li>
-        <li>Files can be uploaded through the file selector or by dropping them on the upload panel. A progress bar reports the state of the transfer.</li>
-        <li>The panel can be installed as a Progressive Web App (PWA) on Chrome, Edge and Safari. Offline, only the app shell is available; access to files requires a connection. Firefox Desktop does not offer the installation option, so the panel works there as a regular web page.</li>
-      </ul>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <ul>
-        <li>Dentro de una subcarpeta, la barra de herramientas permite subir uno o varios archivos, crear carpetas y recargar la vista. Cada operación queda registrada en el registro de auditoría junto con la IP del cliente.</li>
-        <li>Las imágenes y los archivos PDF se abren en un modal mediante el botón <strong>Preview</strong>, sin descargarlos. Para los demás tipos de archivo se mantiene el botón <strong>View</strong>, que abre el archivo en una pestaña nueva.</li>
-        <li>Los archivos pueden subirse mediante el selector de archivos o soltándolos sobre el panel de subida. Una barra de progreso informa del estado de la transferencia.</li>
-        <li>Puedes instalar el panel como aplicación web progresiva (PWA) en Chrome, Edge y Safari. Sin conexión solo queda disponible la estructura de la aplicación; para acceder a los archivos se necesita conexión. Firefox para escritorio no ofrece la opción de instalación, por lo que el panel funciona allí como una página web normal.</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-[![smbstack-files](./img/smbstack-files.png)](https://github.com/maravento/smbstack)
-
-### SMBreport
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <p>The report view is the third tab of the web panel. It is accessed through <code>http://localhost:3092/?tab=report</code>.</p>
-      <p>It contains three tables: the thirty extensions with the largest total size, the thirty folders with the largest total size, and the fifty largest files, with their full path. The extensions table includes the file count, the average size and the share they represent of the total.</p>
-      <p><code>tools/smbreport.sh</code> walks the shared folder as <code>root</code> and saves the results in a JSON file. Cron runs the script daily at 03:00. Because the walk can take several minutes and use the disk while SMB clients are working, it is scheduled outside working hours.</p>
-      <p>The view requests the data from <code>smbapi.php</code>; it does not scan the disk. Until <code>smbreport.sh</code> completes its first scan, the tab reports that no report is available.</p>
-      <p>The report excludes the recycle bin, so its files do not appear in the tables. The JSON file is also unavailable over HTTP: <code>smbapi.php</code> reads it directly from disk instead of serving it from Apache's web root.</p>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <p>La vista de informe es la tercera pestaña del panel web. Se accede mediante <code>http://localhost:3092/?tab=report</code>.</p>
-      <p>Contiene tres tablas: las treinta extensiones con mayor tamaño total, las treinta carpetas con mayor tamaño total y los cincuenta archivos más grandes, con su ruta completa. La tabla de extensiones incluye el número de archivos, el tamaño promedio y la proporción que representan sobre el total.</p>
-      <p><code>tools/smbreport.sh</code> recorre la carpeta compartida como <code>root</code> y guarda los resultados en un archivo JSON. Cron ejecuta el script cada día a las 03:00. Como el recorrido puede tardar varios minutos y usar el disco mientras trabajan los clientes SMB, se programa fuera del horario laboral.</p>
-      <p>La vista solicita los datos a <code>smbapi.php</code>; no recorre el disco. Hasta que <code>smbreport.sh</code> complete el primer recorrido, la pestaña indicará que aún no hay un informe disponible.</p>
-      <p>El informe no incluye la papelera, por lo que sus archivos no aparecen en las tablas. El archivo JSON tampoco está disponible por HTTP: <code>smbapi.php</code> lo lee directamente del disco y no lo publica en la raíz web de Apache.</p>
-    </td>
-  </tr>
-</table>
-
-[![smbreport](./img/smbreport.png)](https://github.com/maravento/smbstack)
-
-## SCOPE
-
----
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <b>What SMBstack does:</b>
-      <ul>
-        <li>Installs and configures Samba with a shared folder, recycle bin and group permissions.</li>
-        <li>Configures audit logging through <code>rsyslog</code> to <code>/var/log/samba/log.audit</code>.</li>
-        <li>Deploys a web panel with three tabs at <code>http://localhost:3092/</code>: shared folder, audit log and disk usage report.</li>
-        <li>Configures <code>logrotate</code> for the Samba logs.</li>
-        <li>Installs the <code>smbload.sh</code> service monitor, which cron runs every five minutes.</li>
-        <li>Includes <code>smbwatch.sh</code>, a shared folder size monitor managed separately from the installer.</li>
-        <li>Provides a configuration backup tool (<code>smbbk.sh</code>), run through cron monthly.</li>
-        <li>Installs a disk usage report (<code>smbreport.sh</code>), run through cron daily at 03:00.</li>
-        <li>Saves the installation configuration to <code>/etc/smbstack/smbstack.env</code> for future updates.</li>
-        <li>Keeps NetBIOS disabled by default. It can be enabled manually if required; see the NetBIOS section.</li>
-      </ul>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <b>Lo que SMBstack hace:</b>
-      <ul>
-        <li>Instala y configura Samba con una carpeta compartida, papelera de reciclaje y permisos de grupo.</li>
-        <li>Configura la auditoría mediante <code>rsyslog</code> en <code>/var/log/samba/log.audit</code>.</li>
-        <li>Despliega un panel web con tres pestañas en <code>http://localhost:3092/</code>: carpeta compartida, registro de auditoría e informe de uso de disco.</li>
-        <li>Configura <code>logrotate</code> para los registros de Samba.</li>
-        <li>Instala el supervisor de servicios <code>smbload.sh</code>, que cron ejecuta cada cinco minutos.</li>
-        <li>Incluye <code>smbwatch.sh</code>, un monitor de espacio que se administra por separado y no depende del instalador.</li>
-        <li>Proporciona una herramienta de respaldo de configuración (<code>smbbk.sh</code>), ejecutada mediante cron mensualmente.</li>
-        <li>Instala un informe de uso de disco (<code>smbreport.sh</code>), ejecutado mediante cron diariamente a las 03:00.</li>
-        <li>Guarda la configuración de la instalación en <code>/etc/smbstack/smbstack.env</code> para futuras actualizaciones.</li>
-        <li>Mantiene NetBIOS deshabilitado por defecto. Puede activarse manualmente si es necesario; consulte la sección NetBIOS.</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      <b>Out of scope (not implemented):</b>
-      <ul>
-        <li>Active Directory / domain controller.</li>
-        <li>Multiple shared folders.</li>
-        <li>Custom paths outside <code>/home/$local_user/</code> (require manual editing).</li>
-        <li>IPv6.</li>
-        <li>LDAP.</li>
-      </ul>
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      <b>Fuera de alcance (no implementado):</b>
-      <ul>
-        <li>Active Directory / controlador de dominio.</li>
-        <li>Múltiples carpetas compartidas.</li>
-        <li>Rutas personalizadas fuera de <code>/home/$local_user/</code> (requieren edición manual).</li>
-        <li>IPv6.</li>
-        <li>LDAP.</li>
-      </ul>
-    </td>
-  </tr>
-</table>
-
-## REPOSITORY STRUCTURE
-
----
-
-```
-smbstack/
-├── acl/                         # Static access-control lists for Samba
-│   └── commonveto.txt              # Veto list for common unwanted file types (active by default in smb.conf)
-│
-├── conf/                        # Samba, rsyslog and Apache configuration
-│   ├── fullaudit.conf              # rsyslog full audit rule
-│   ├── smb.conf                    # Samba main config (placeholders: your_user, compartida)
-│   └── smbweb.conf                 # Apache vhost (:3092/?tab=shared, ?tab=audit and ?tab=report)
-│
-├── tools/                      # Background watchdog and maintenance scripts
-│   ├── smbbk.sh                    # Configuration backup for smbstack
-│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch)
-│   ├── smbreport.sh                # Disk usage report for the shared folder (daily cron)
-│   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
-│
-├── web/                        # Web front-end: shared-folder browser, audit log viewer and disk report
-│   ├── icon.svg                    # PWA / apple-touch icon
-│   ├── index.php                   # Main page (Shared / Audit / Report tabs)
-│   ├── manifest.json               # PWA manifest
-│   ├── smbshared.php               # Shared folder dynamic browser
-│   ├── smbapi.php                  # Audit log and disk report reader API
-│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool
-│   ├── smbaudit.html               # Audit log viewer UI
-│   ├── smbreport.html              # Disk report viewer UI
-│   └── sw.js                       # PWA service worker (app-shell cache only)
-│
-└── smbsetup.sh                 # Installer: install, update, uninstall, status
-```
-
-<table>
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      Files and directories generated at runtime (not included in the repository):
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      Archivos y directorios generados en runtime (no incluidos en el repositorio):
-    </td>
-  </tr>
-</table>
-
-```
-/var/www/smbstack/
-├── .size_cache/                # Folder size cache used by smbshared.php (www-data, pruned daily by cron)
-└── web/                        # Deployed copy of web/ (served by Apache on :3092)
-    └── smbreport.json          # Disk report written by tools/smbreport.sh (root:www-data, 640)
-
-/etc/smbstack/
-├── acl/                        # Deployed copy of acl/ (root:root, 644)
-│   └── commonveto.txt          # Veto list included by smb.conf
-├── tools/                      # Deployed copy of tools/*.sh (root:root, 755)
-└── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
-
-/etc/bak/smbstack/              # Archives written by tools/smbbk.sh (smbbk_<YYYYMMDD_HHMMSS>.zip, last 3 kept),
-                                # run by --update before overwriting application code, and by its own monthly cron
-/etc/cron.d/smbstack            # All cron entries of the project, one file
-
-/var/log/smbwatch.log           # smbwatch.sh runtime log (root:root, 640)
-/var/log/smbload.log            # smbload.sh runtime log, rewritten on each run
-/var/log/smbstack.log           # smbbk.sh and smbreport.sh runtime log, shared
-smbsetup.log                    # In smbsetup.sh's own directory, rewritten on each run
-
-/home/$local_user/shared/       # Shared folder (independent of the installer)
-├── .recycle/                   # Recycle Bin (smbguest/, www-data/, smbwatch/)
-└── DEMO/                       # Demo folder
-
-/etc/logrotate.d/samba          # Generated by installer (heredoc)
-/etc/logrotate.d/smbwatch       # Generated by installer (heredoc), rotates /var/log/smbwatch.log
-/var/log/samba/log.audit        # Created by rsyslog
-/var/log/samba/log.samba        # Created by installer, written directly by smbd
-```
-
-> Every cron entry of the project lives in `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` and `tools/smbbk.sh` add or remove their own line in that file.
->
-> Each line names the user that runs the task, as required by the `/etc/cron.d` format. The scripts add or remove only their own entries in `/etc/cron.d/smbstack`.
->
-> `--uninstall` deletes the file.
->
-> Installations made before this change keep their entries in root's crontab. The installer removes them, identified by the full script path.
->
-> Todas las entradas de cron del proyecto viven en `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` y `tools/smbbk.sh` agregan o eliminan su propia línea en ese archivo.
->
-> Cada línea indica el usuario que ejecutará la tarea, como requiere el formato de `/etc/cron.d`. Los scripts agregan o eliminan únicamente sus propias entradas en `/etc/cron.d/smbstack`.
->
-> `--uninstall` elimina el archivo.
->
-> Las instalaciones anteriores a este cambio conservan sus entradas en el crontab de root. El instalador las retira, identificadas por la ruta completa del script.
-
 ## HOW TO USE
 
 ---
@@ -1062,6 +788,280 @@ sudo tee -a /etc/logrotate.d/samba > /dev/null <<'EOF'
 }
 EOF
 ```
+
+## REPOSITORY STRUCTURE
+
+---
+
+```
+smbstack/
+├── acl/                         # Static access-control lists for Samba
+│   └── commonveto.txt              # Veto list for common unwanted file types (active by default in smb.conf)
+│
+├── conf/                        # Samba, rsyslog and Apache configuration
+│   ├── fullaudit.conf              # rsyslog full audit rule
+│   ├── smb.conf                    # Samba main config (placeholders: your_user, compartida)
+│   └── smbweb.conf                 # Apache vhost (:3092/?tab=shared, ?tab=audit and ?tab=report)
+│
+├── tools/                      # Background watchdog and maintenance scripts
+│   ├── smbbk.sh                    # Configuration backup for smbstack
+│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch)
+│   ├── smbreport.sh                # Disk usage report for the shared folder (daily cron)
+│   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
+│
+├── web/                        # Web front-end: shared-folder browser, audit log viewer and disk report
+│   ├── icon.svg                    # PWA / apple-touch icon
+│   ├── index.php                   # Main page (Shared / Audit / Report tabs)
+│   ├── manifest.json               # PWA manifest
+│   ├── smbshared.php               # Shared folder dynamic browser
+│   ├── smbapi.php                  # Audit log and disk report reader API
+│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool
+│   ├── smbaudit.html               # Audit log viewer UI
+│   ├── smbreport.html              # Disk report viewer UI
+│   └── sw.js                       # PWA service worker (app-shell cache only)
+│
+└── smbsetup.sh                 # Installer: install, update, uninstall, status
+```
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      Files and directories generated at runtime (not included in the repository):
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Archivos y directorios generados en runtime (no incluidos en el repositorio):
+    </td>
+  </tr>
+</table>
+
+```
+/var/www/smbstack/
+├── .size_cache/                # Folder size cache used by smbshared.php (www-data, pruned daily by cron)
+└── web/                        # Deployed copy of web/ (served by Apache on :3092)
+    └── smbreport.json          # Disk report written by tools/smbreport.sh (root:www-data, 640)
+
+/etc/smbstack/
+├── acl/                        # Deployed copy of acl/ (root:root, 644)
+│   └── commonveto.txt          # Veto list included by smb.conf
+├── tools/                      # Deployed copy of tools/*.sh (root:root, 755)
+└── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
+
+/etc/bak/smbstack/              # Archives written by tools/smbbk.sh (smbbk_<YYYYMMDD_HHMMSS>.zip, last 3 kept),
+                                # run by --update before overwriting application code, and by its own monthly cron
+/etc/cron.d/smbstack            # All cron entries of the project, one file
+
+/var/log/smbwatch.log           # smbwatch.sh runtime log (root:root, 640)
+/var/log/smbload.log            # smbload.sh runtime log, rewritten on each run
+/var/log/smbstack.log           # smbbk.sh and smbreport.sh runtime log, shared
+smbsetup.log                    # In smbsetup.sh's own directory, rewritten on each run
+
+/home/$local_user/shared/       # Shared folder (independent of the installer)
+├── .recycle/                   # Recycle Bin (smbguest/, www-data/, smbwatch/)
+└── DEMO/                       # Demo folder
+
+/etc/logrotate.d/samba          # Generated by installer (heredoc)
+/etc/logrotate.d/smbwatch       # Generated by installer (heredoc), rotates /var/log/smbwatch.log
+/var/log/samba/log.audit        # Created by rsyslog
+/var/log/samba/log.samba        # Created by installer, written directly by smbd
+```
+
+> Every cron entry of the project lives in `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` and `tools/smbbk.sh` add or remove their own line in that file.
+>
+> Each line names the user that runs the task, as required by the `/etc/cron.d` format. The scripts add or remove only their own entries in `/etc/cron.d/smbstack`.
+>
+> `--uninstall` deletes the file.
+>
+> Installations made before this change keep their entries in root's crontab. The installer removes them, identified by the full script path.
+>
+> Todas las entradas de cron del proyecto viven en `/etc/cron.d/smbstack`. `smbsetup.sh`, `tools/smbwatch.sh`, `tools/smbreport.sh` y `tools/smbbk.sh` agregan o eliminan su propia línea en ese archivo.
+>
+> Cada línea indica el usuario que ejecutará la tarea, como requiere el formato de `/etc/cron.d`. Los scripts agregan o eliminan únicamente sus propias entradas en `/etc/cron.d/smbstack`.
+>
+> `--uninstall` elimina el archivo.
+>
+> Las instalaciones anteriores a este cambio conservan sus entradas en el crontab de root. El instalador las retira, identificadas por la ruta completa del script.
+
+## WEB INTERFACE
+
+---
+
+### Main Menu
+
+[![smbstack-main](./img/smbstack-main.png)](https://github.com/maravento/smbstack)
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Each view can be opened in two ways:</p>
+      <ul>
+        <li><code>http://localhost:3092/?tab=shared</code>, <code>?tab=audit</code> or <code>?tab=report</code>: opens the panel on the corresponding tab and keeps the tab bar visible.</li>
+        <li><code>http://localhost:3092/shared/</code>, <code>/audit/</code> or <code>/report/</code>: opens only the selected view, without the tab bar.</li>
+      </ul>
+      <p>Both forms of access are valid.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Cada vista puede abrirse de dos maneras:</p>
+      <ul>
+        <li><code>http://localhost:3092/?tab=shared</code>, <code>?tab=audit</code> o <code>?tab=report</code>: abre el panel en la pestaña correspondiente y mantiene visible la barra de pestañas.</li>
+        <li><code>http://localhost:3092/shared/</code>, <code>/audit/</code> o <code>/report/</code>: abre únicamente la vista seleccionada, sin la barra de pestañas.</li>
+      </ul>
+      <p>Ambas formas de acceso son válidas.</p>
+    </td>
+  </tr>
+</table>
+
+### SMBaudit
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>The audit view is one of the three tabs of the web panel. It is accessed through <code>http://localhost:3092/?tab=audit</code>.</p>
+      <p>The audit view reads <code>/var/log/samba/log.audit</code> and its rotated files. <code>smbapi.php</code> returns the records as JSON. The maximum number returned per request is set by <code>MAX_LOG_LINES</code> in <code>smbstack.env</code>.</p>
+      <p>Date, IP, action and text filters are applied in the browser to the records already received. You can view the results in pages of 50, 100, 200 or 500 records.</p>
+      <p>The <strong>Export PDF</strong> button opens the browser's print window with three columns: date and time, IP and file. You can save or print the document there; the server does not generate the PDF.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>La vista de auditoría es una de las tres pestañas del panel web. Se accede mediante <code>http://localhost:3092/?tab=audit</code>.</p>
+      <p>La vista consulta <code>/var/log/samba/log.audit</code> y sus archivos rotados. <code>smbapi.php</code> lee los registros y los entrega en formato JSON. El máximo por petición se configura con <code>MAX_LOG_LINES</code> en <code>smbstack.env</code>.</p>
+      <p>Los filtros de fecha, IP, acción y texto se aplican en el navegador a los registros recibidos. Puedes ver los resultados en páginas de 50, 100, 200 o 500 registros.</p>
+      <p>El botón <strong>Export PDF</strong> abre la ventana de impresión del navegador con tres columnas: fecha y hora, IP y archivo. Desde allí puedes guardar o imprimir el documento; el servidor no genera el PDF.</p>
+    </td>
+  </tr>
+</table>
+
+[![smbaudit](./img/smbaudit.png)](https://github.com/maravento/smbstack)
+
+[![smbstack-botton](./img/smbstack-botton.png)](https://github.com/maravento/smbstack)
+
+### SMBshared
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>The web panel is an Apache VirtualHost listening on port <code>3092</code>. It is accessed through <code>http://localhost:3092/</code> and has three tabs: <strong>Shared</strong>, <strong>Audit</strong> and <strong>Report</strong>. Each tab corresponds to a separate page, which <code>index.php</code> loads inside a frame.</p>
+      <p>The <strong>Shared</strong> tab displays the contents of the shared folder. From there a document can be opened, downloaded or moved to the recycle bin.</p>
+      <p>The root of the shared folder is read-only: you cannot upload files, create folders or delete items there. These actions are available inside subfolders.</p>
+      <p>Apache runs the panel as the <code>www-data</code> user, which receives read and write permissions on the shared folder through an ACL set during the installation.</p>
+      <p>The light and dark themes are selected from the top bar. The selection is stored in the browser and applied to the three tabs.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>El panel web es un VirtualHost de Apache que escucha en el puerto <code>3092</code>. Se accede mediante <code>http://localhost:3092/</code> y tiene tres pestañas: <strong>Shared</strong>, <strong>Audit</strong> y <strong>Report</strong>. Cada pestaña corresponde a una página independiente, que <code>index.php</code> carga dentro de un marco.</p>
+      <p>La pestaña <strong>Shared</strong> muestra el contenido de la carpeta compartida. Desde allí se puede abrir un documento, descargarlo o moverlo a la papelera de reciclaje.</p>
+      <p>La raíz de la carpeta compartida es de solo lectura: desde allí no puedes subir archivos, crear carpetas ni eliminar elementos. Estas acciones están disponibles dentro de las subcarpetas.</p>
+      <p>Apache ejecuta el panel como el usuario <code>www-data</code>, que recibe permisos de lectura y escritura sobre la carpeta compartida mediante una ACL establecida durante la instalación.</p>
+      <p>Los temas claro y oscuro se seleccionan desde la barra superior. La selección se guarda en el navegador y se aplica a las tres pestañas.</p>
+    </td>
+  </tr>
+</table>
+
+[![smbshared](./img/smbshared.png)](https://github.com/maravento/smbstack)
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <ul>
+        <li>Inside a subfolder, the toolbar allows uploading one or more files, creating folders and reloading the view. Each operation is recorded in the audit log together with the client's IP address.</li>
+        <li>Images and PDF files open in a modal through the <strong>Preview</strong> button, without being downloaded. For the remaining file types, the <strong>View</strong> button is kept, which opens the file in a new tab.</li>
+        <li>Files can be uploaded through the file selector or by dropping them on the upload panel. A progress bar reports the state of the transfer.</li>
+        <li>The panel can be installed as a Progressive Web App (PWA) on Chrome, Edge and Safari. Offline, only the app shell is available; access to files requires a connection. Firefox Desktop does not offer the installation option, so the panel works there as a regular web page.</li>
+      </ul>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <ul>
+        <li>Dentro de una subcarpeta, la barra de herramientas permite subir uno o varios archivos, crear carpetas y recargar la vista. Cada operación queda registrada en el registro de auditoría junto con la IP del cliente.</li>
+        <li>Las imágenes y los archivos PDF se abren en un modal mediante el botón <strong>Preview</strong>, sin descargarlos. Para los demás tipos de archivo se mantiene el botón <strong>View</strong>, que abre el archivo en una pestaña nueva.</li>
+        <li>Los archivos pueden subirse mediante el selector de archivos o soltándolos sobre el panel de subida. Una barra de progreso informa del estado de la transferencia.</li>
+        <li>Puedes instalar el panel como aplicación web progresiva (PWA) en Chrome, Edge y Safari. Sin conexión solo queda disponible la estructura de la aplicación; para acceder a los archivos se necesita conexión. Firefox para escritorio no ofrece la opción de instalación, por lo que el panel funciona allí como una página web normal.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+[![smbstack-files](./img/smbstack-files.png)](https://github.com/maravento/smbstack)
+
+### SMBreport
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>The report view is the third tab of the web panel. It is accessed through <code>http://localhost:3092/?tab=report</code>.</p>
+      <p>It contains three tables: the thirty extensions with the largest total size, the thirty folders with the largest total size, and the fifty largest files, with their full path. The extensions table includes the file count, the average size and the share they represent of the total.</p>
+      <p><code>tools/smbreport.sh</code> walks the shared folder as <code>root</code> and saves the results in a JSON file. Cron runs the script daily at 03:00. Because the walk can take several minutes and use the disk while SMB clients are working, it is scheduled outside working hours.</p>
+      <p>The view requests the data from <code>smbapi.php</code>; it does not scan the disk. Until <code>smbreport.sh</code> completes its first scan, the tab reports that no report is available.</p>
+      <p>The report excludes the recycle bin, so its files do not appear in the tables. The JSON file is also unavailable over HTTP: <code>smbapi.php</code> reads it directly from disk instead of serving it from Apache's web root.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>La vista de informe es la tercera pestaña del panel web. Se accede mediante <code>http://localhost:3092/?tab=report</code>.</p>
+      <p>Contiene tres tablas: las treinta extensiones con mayor tamaño total, las treinta carpetas con mayor tamaño total y los cincuenta archivos más grandes, con su ruta completa. La tabla de extensiones incluye el número de archivos, el tamaño promedio y la proporción que representan sobre el total.</p>
+      <p><code>tools/smbreport.sh</code> recorre la carpeta compartida como <code>root</code> y guarda los resultados en un archivo JSON. Cron ejecuta el script cada día a las 03:00. Como el recorrido puede tardar varios minutos y usar el disco mientras trabajan los clientes SMB, se programa fuera del horario laboral.</p>
+      <p>La vista solicita los datos a <code>smbapi.php</code>; no recorre el disco. Hasta que <code>smbreport.sh</code> complete el primer recorrido, la pestaña indicará que aún no hay un informe disponible.</p>
+      <p>El informe no incluye la papelera, por lo que sus archivos no aparecen en las tablas. El archivo JSON tampoco está disponible por HTTP: <code>smbapi.php</code> lo lee directamente del disco y no lo publica en la raíz web de Apache.</p>
+    </td>
+  </tr>
+</table>
+
+[![smbreport](./img/smbreport.png)](https://github.com/maravento/smbstack)
+
+## SCOPE
+
+---
+
+<table>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <b>What SMBstack does:</b>
+      <ul>
+        <li>Installs and configures Samba with a shared folder, recycle bin and group permissions.</li>
+        <li>Configures audit logging through <code>rsyslog</code> to <code>/var/log/samba/log.audit</code>.</li>
+        <li>Deploys a web panel with three tabs at <code>http://localhost:3092/</code>: shared folder, audit log and disk usage report.</li>
+        <li>Configures <code>logrotate</code> for the Samba logs.</li>
+        <li>Installs the <code>smbload.sh</code> service monitor, which cron runs every five minutes.</li>
+        <li>Includes <code>smbwatch.sh</code>, a shared folder size monitor managed separately from the installer.</li>
+        <li>Provides a configuration backup tool (<code>smbbk.sh</code>), run through cron monthly.</li>
+        <li>Installs a disk usage report (<code>smbreport.sh</code>), run through cron daily at 03:00.</li>
+        <li>Saves the installation configuration to <code>/etc/smbstack/smbstack.env</code> for future updates.</li>
+        <li>Keeps NetBIOS disabled by default. It can be enabled manually if required; see the NetBIOS section.</li>
+      </ul>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <b>Lo que SMBstack hace:</b>
+      <ul>
+        <li>Instala y configura Samba con una carpeta compartida, papelera de reciclaje y permisos de grupo.</li>
+        <li>Configura la auditoría mediante <code>rsyslog</code> en <code>/var/log/samba/log.audit</code>.</li>
+        <li>Despliega un panel web con tres pestañas en <code>http://localhost:3092/</code>: carpeta compartida, registro de auditoría e informe de uso de disco.</li>
+        <li>Configura <code>logrotate</code> para los registros de Samba.</li>
+        <li>Instala el supervisor de servicios <code>smbload.sh</code>, que cron ejecuta cada cinco minutos.</li>
+        <li>Incluye <code>smbwatch.sh</code>, un monitor de espacio que se administra por separado y no depende del instalador.</li>
+        <li>Proporciona una herramienta de respaldo de configuración (<code>smbbk.sh</code>), ejecutada mediante cron mensualmente.</li>
+        <li>Instala un informe de uso de disco (<code>smbreport.sh</code>), ejecutado mediante cron diariamente a las 03:00.</li>
+        <li>Guarda la configuración de la instalación en <code>/etc/smbstack/smbstack.env</code> para futuras actualizaciones.</li>
+        <li>Mantiene NetBIOS deshabilitado por defecto. Puede activarse manualmente si es necesario; consulte la sección NetBIOS.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <b>Out of scope (not implemented):</b>
+      <ul>
+        <li>Active Directory / domain controller.</li>
+        <li>Multiple shared folders.</li>
+        <li>Custom paths outside <code>/home/$local_user/</code> (require manual editing).</li>
+        <li>IPv6.</li>
+        <li>LDAP.</li>
+      </ul>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <b>Fuera de alcance (no implementado):</b>
+      <ul>
+        <li>Active Directory / controlador de dominio.</li>
+        <li>Múltiples carpetas compartidas.</li>
+        <li>Rutas personalizadas fuera de <code>/home/$local_user/</code> (requieren edición manual).</li>
+        <li>IPv6.</li>
+        <li>LDAP.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ## ⚠️ WARNING: NETWORK ACCESS
 
