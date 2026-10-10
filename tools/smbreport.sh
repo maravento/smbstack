@@ -105,17 +105,11 @@ register_cron() {
     cron_d_set "$installed_path" "0 3 * * * root $installed_path"
     log "INFO: cron entry registered, runs daily at 03:00"
     log "INFO: $installed_path"
-
-    # legacy entry in root's crontab, from versions before /etc/cron.d
-    crontab -l 2>/dev/null | { grep -vF "$installed_path" || true; } | crontab - 2>/dev/null || true
 }
 
 deregister_cron() {
     cron_d_set "$installed_path" ""
     log "INFO: cron entry removed, report kept"
-
-    # legacy entry in root's crontab, from versions before /etc/cron.d
-    crontab -l 2>/dev/null | { grep -vF "$installed_path" || true; } | crontab - 2>/dev/null || true
 }
 
 # Build the JSON report from a single walk of the shared folder
