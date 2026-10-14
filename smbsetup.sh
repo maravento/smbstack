@@ -120,27 +120,8 @@ UH_CIDR='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]
 # FUNCTIONS
 # ------------------------------------------------------------------------------
 
-load_conf() {
-    local conf_file="$1" env_key env_value env_line
-    [[ ! -f "$conf_file" ]] && { log "WARNING: $conf_file not found -- fallback"; return 1; }
-    while IFS= read -r env_line || [[ -n "$env_line" ]]; do
-        [[ "$env_line" =~ ^[[:space:]]*[#] ]] && continue
-        [[ "$env_line" =~ ^[[:space:]]*$ ]] && continue
-        env_key="${env_line%%=*}"
-        env_value="${env_line#*=}"
-        if [[ ! "$env_line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] \
-           || [[ "$env_value" == [[:space:]\"\']* ]] \
-           || [[ "$env_value" == *[[:space:]\"\'] ]]; then
-            log "ERROR: malformed line in $(basename "$conf_file"): '$env_line' -- abort"
-            exit 1
-        fi
-        case "$env_key" in
-            LOCAL_USER|SHARED_NAME|SHARED_PATH|SMB_NET|SMB_IFACE|SMBNAME)
-                printf -v "$env_key" '%s' "$env_value"
-                ;;
-        esac
-    done < "$conf_file"
-}
+source "$tools_dir/smbstackenv.sh"
+env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME'
 
 # CRON_D
 # Add or replace one line in the project's single cron.d file
@@ -372,7 +353,7 @@ check_already_installed() {
 
     if [ -f "/etc/samba/smb.conf" ]; then
         existing_share=""
-        [ -f "$smbstack_env" ] && { load_conf "$smbstack_env"; existing_share="${SHARED_NAME:-}"; }
+        [ -f "$smbstack_env" ] && { load_smbstack_env "$smbstack_env" "$env_keys"; existing_share="${SHARED_NAME:-}"; }
         if [ -n "$existing_share" ] && grep -q "\[${existing_share}\]" /etc/samba/smb.conf 2>/dev/null; then
             already_installed=1
             skip_reasons+=" - smb.conf already configured: /etc/samba/smb.conf\n"
@@ -625,12 +606,14 @@ EOF
     usermod -a -G adm www-data
 
     cp -f /etc/logrotate.d/rsyslog{,.bak} &>/dev/null
-    grep -qF 'create 0644 syslog adm' /etc/logrotate.d/rsyslog || \
+    grep -qE '^[[:space:]]*create 0644 syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
         sed -i '/sharedscripts/a \ create 0644 syslog adm' /etc/logrotate.d/rsyslog
-    grep -qF 'su syslog adm' /etc/logrotate.d/rsyslog || \
+    grep -qE '^[[:space:]]*su syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
         sed -i '/^{$/a \	su syslog adm' /etc/logrotate.d/rsyslog
 
-    logrotate_out=$(logrotate -f /etc/logrotate.d/samba 2>&1)
+    # -d, not -f: this only validates the config. Forcing a rotation here
+    # would split the current day, and rules.md 8.4 fixes rotations at 00:00.
+    logrotate_out=$(logrotate -d /etc/logrotate.d/samba 2>&1)
     if echo "$logrotate_out" | grep -qi "error"; then
         warn "logrotate error -- alert"
         echo "$logrotate_out"
@@ -645,8 +628,10 @@ EOF
 
     # service watchdog
     mkdir -p "$smbstack_tools"
+    install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"
     cp -f "$tools_dir"/*.sh "$smbstack_tools/"
     chmod +x "$smbstack_tools"/*.sh
+    chmod 644 "$smbstack_tools/smbstackenv.sh"
     # cron: service watchdog
     cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh"
 
@@ -768,13 +753,16 @@ do_update() {
     fi
 
     # load saved config
-    load_conf "$smbstack_env"
+    load_smbstack_env "$smbstack_env" "$env_keys"
     echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
     echo ""
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
-        echo "Creating backup with smbbk.sh ..."
-        "$smbstack_tools/smbbk.sh" || warn "backup failed, continuing -- alert"
+        if "$smbstack_tools/smbbk.sh"; then
+            info "backup taken with smbbk.sh"
+        else
+            warn "backup failed, continuing -- alert"
+        fi
     else
         warn "smbbk.sh not found, no backup -- alert"
     fi
@@ -793,17 +781,19 @@ do_update() {
         escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
         sed -i "s|your_user|$escaped_user|g" "$dest_path"
         sed -i "s|compartida|$SHARED_NAME|g" "$dest_path"
-        echo "Updated: $base_name"
+        info "updated $base_name"
     done
 
     # tools
     mkdir -p "$smbstack_tools"
+    install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"
     for tool_file in "$tools_dir"/*.sh; do
         [ -f "$tool_file" ] || continue
+        [ "$(basename "$tool_file")" = smbstackenv.sh ] && continue
         base_name="$(basename "$tool_file")"
         cp -f "$tool_file" "$smbstack_tools/$base_name"
         chmod +x "$smbstack_tools/$base_name"
-        echo "Updated: $base_name"
+        info "updated $base_name"
     done
 
     mkdir -p "$smbstack_www/.size_cache"
@@ -822,7 +812,7 @@ do_update() {
             "$smbstack_tools/$cron_tool" install || warn "cron entry not registered -- alert"
         fi
     done
-    echo "Updated: cron entries"
+    info "updated cron entries"
 
     systemctl daemon-reload
     systemctl restart smbd winbind rsyslog apache2
@@ -841,7 +831,7 @@ do_uninstall() {
     # load samba username and shared path from env
     uninstall_shared_path=""
     if [ -f "$smbstack_env" ]; then
-        load_conf "$smbstack_env"
+        load_smbstack_env "$smbstack_env" "$env_keys"
         if [ -n "${SMBNAME:-}" ]; then
             pdbedit -x "$SMBNAME" 2>/dev/null || true
             echo "Samba user removed: $SMBNAME"
