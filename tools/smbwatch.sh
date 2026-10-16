@@ -29,17 +29,23 @@ set -uo pipefail
 # path for cron
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# root check
+if [ "$(id -u)" != "0" ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -- abort" >&2
+    exit 1
+fi
+
 # logging
 log_file="/var/log/smbwatch.log"
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" 2>/dev/null || true
+    local log_msg="$(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo "$log_msg" >> "$log_file" 2>/dev/null || true
+    if [[ "$1" == ERROR:* ]]; then
+        echo "$log_msg" >&2
+    else
+        echo "$log_msg"
+    fi
 }
-
-# root check
-if [ "$(id -u)" != "0" ]; then
-    log "ERROR: This script must be run as root -- abort"
-    exit 1
-fi
 
 # dependencies
 for dep_pkg in inotify-tools procps coreutils findutils cron util-linux sed grep; do
@@ -75,11 +81,23 @@ cron_d_set() {
     local cron_file="/etc/cron.d/smbstack"
     local cron_tmp
 
-    cron_tmp=$(mktemp)
-    [ -f "$cron_file" ] && { grep -vF "$match" "$cron_file" > "$cron_tmp" || true; }
-    [ -n "$line" ] && printf '%s\n' "$line" >> "$cron_tmp"
+    cron_tmp=$(mktemp) || return 1
+    if [ -f "$cron_file" ]; then
+        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
+            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
+        }
+    fi
+    if [ -n "$line" ]; then
+        printf '%s\n' "$line" >> "$cron_tmp" || {
+            rm -f "$cron_tmp"
+            return 1
+        }
+    fi
     if [ -s "$cron_tmp" ]; then
-        install -m 644 -o root -g root "$cron_tmp" "$cron_file"
+        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
+            rm -f "$cron_tmp"
+            return 1
+        fi
     else
         rm -f "$cron_file"
     fi
@@ -146,12 +164,19 @@ handle_new_file() {
         install -d -o root -g root -m 755 "$dest_path"
 
         if [ -f "$new_file" ]; then
-            mv -f --backup=numbered "$new_file" "$dest_path/$(basename "$new_file")"
-            touch "$dest_path/$(basename "$new_file")"
+            if ! mv -f --backup=numbered "$new_file" \
+                "$dest_path/$(basename "$new_file")"; then
+                log "WARNING: cannot recycle $(basename "$new_file") -- alert"
+                return 1
+            fi
+            touch -h "$dest_path/$(basename "$new_file")"
             log "INFO: moved to recycle: $(basename "$new_file")"
         elif [ -d "$new_file" ] && [ -z "$(ls -A "$new_file")" ]; then
-            mv -f "$new_file" "$dest_path/$(basename "$new_file")"
-            touch "$dest_path/$(basename "$new_file")"
+            if ! mv -f "$new_file" "$dest_path/$(basename "$new_file")"; then
+                log "WARNING: cannot recycle $(basename "$new_file") -- alert"
+                return 1
+            fi
+            touch -h "$dest_path/$(basename "$new_file")"
             log "INFO: moved empty dir to recycle: $(basename "$new_file")"
         fi
     fi
@@ -215,7 +240,9 @@ check_keys() {
     elif [[ -z "${WATCH_LIMIT_GB:-}" ]]; then
         key_errors+=("WATCH_LIMIT_GB not set")
     elif ! [[ "$WATCH_LIMIT_GB" =~ $UH_UINT ]] \
-         || (( WATCH_LIMIT_GB < 1 || WATCH_LIMIT_GB > 10000 )); then
+         || [ "${#WATCH_LIMIT_GB}" -gt 5 ] \
+         || [ "$WATCH_LIMIT_GB" -lt 1 ] \
+         || [ "$WATCH_LIMIT_GB" -gt 10000 ]; then
         key_errors+=("WATCH_LIMIT_GB invalid GB, expected 1 to 10000")
     fi
     if (( ${#key_errors[@]} > 0 )); then
@@ -262,7 +289,9 @@ install_module() {
         read -rp "Enter watch limit per folder in GB [10]: " input_limit
         input_limit="${input_limit:-10}"
         if [[ "$input_limit" =~ $UH_UINT ]] \
-           && (( input_limit >= 1 && input_limit <= 10000 )); then
+           && [ "${#input_limit}" -le 5 ] \
+           && [ "$input_limit" -ge 1 ] \
+           && [ "$input_limit" -le 10000 ]; then
             WATCH_LIMIT_GB="$input_limit"
             set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
             log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
@@ -286,7 +315,7 @@ install_module() {
         echo "# =============================================================================" >> "$smbstack_env"
     fi
 
-    cron_d_set "$script_path" "@reboot root $script_path start"
+    cron_d_set "$script_path" "@reboot root $script_path start" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
     log "INFO: added to cron @reboot"
 
     start
@@ -301,7 +330,7 @@ install_module() {
 uninstall_module() {
     stop
 
-    cron_d_set "$script_path" ""
+    cron_d_set "$script_path" "" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
     log "INFO: removed from cron @reboot"
 
     sed -i '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d' "$smbstack_env"
@@ -339,8 +368,7 @@ start() {
 
     # BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
     if ! wait_mounted_path "$SHARED_PATH"; then
-        log "ERROR: shared folder $(basename "$SHARED_PATH") not available"
-        log "ERROR: check the mount and start smbwatch again -- abort"
+        log "ERROR: shared folder $(basename "$SHARED_PATH") unavailable; check mount -- abort"
         exit 1
     fi
 
@@ -366,14 +394,15 @@ start() {
 
     printf '%s\n' "${watch_dirs[@]}" > "$state_file"
 
-    log "INFO: Starting smbwatch..."
-    log "INFO:   Shared path : $SHARED_PATH"
-    log "INFO:   Watch limit : ${WATCH_LIMIT_GB} GB per folder"
-    log "INFO:   Watching    :"
-    printf '    %s\n' "${watch_dirs[@]}" | tee -a "$log_file"
-    log "INFO:   Excluded    : ${WATCH_EXCLUDE:-none}"
-    log "INFO:   Recycle bin : .recycle/smbwatch (under shared path)"
-    log "INFO:   Log         : $log_file"
+    log "INFO: starting smbwatch"
+    log "INFO: shared path: $SHARED_PATH"
+    log "INFO: watch limit: ${WATCH_LIMIT_GB} GB per folder"
+    for watch_dir in "${watch_dirs[@]}"; do
+        log "INFO: watching $(basename "$watch_dir")"
+    done
+    log "INFO: excluded: ${WATCH_EXCLUDE:-none}"
+    log "INFO: recycle bin: .recycle/smbwatch"
+    log "INFO: log: $log_file"
 
     # A file is handled on close_write or moved_to, never on create: create
     # fires the moment the transfer starts, so acting on it would measure the
@@ -430,8 +459,9 @@ status() {
         log "INFO:   SMBwatch is RUNNING (PID $(cat "$pid_file"))"
         log "INFO:   Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
         if [ -f "$state_file" ]; then
-            log "INFO:   Watching    :"
-            sed 's/^/    /' "$state_file" | tee -a "$log_file"
+            while IFS= read -r watch_dir; do
+                log "INFO: watching $(basename "$watch_dir")"
+            done < "$state_file"
         else
             log "INFO:   Watching    : (unknown, state file missing)"
         fi
@@ -441,10 +471,10 @@ status() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN
+# ACTIONS
 # ------------------------------------------------------------------------------
 
-log "smbwatch start..."
+echo "$(date '+%Y-%m-%d %H:%M:%S') smbwatch start..."
 
 case "${1:-}" in
     install)   install_module ;;
@@ -452,11 +482,11 @@ case "${1:-}" in
     start)     start ;;
     stop)      stop ;;
     status)    status ;;
-    *)         log "INFO: Usage: $(basename "$0") {install|uninstall|start|stop|status}" ;;
-esac
+    *)         log "INFO: Usage: $(basename "$0") {install|uninstall|start|stop|status}"; exit 1 ;;
+esac || exit 1
 
 # ------------------------------------------------------------------------------
 # END
 # ------------------------------------------------------------------------------
 
-log "smbwatch done at: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "$(date '+%Y-%m-%d %H:%M:%S') smbwatch done at: $(date '+%Y-%m-%d %H:%M:%S')"

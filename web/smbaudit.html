@@ -725,7 +725,7 @@
                     document.getElementById('recordsCounter').classList.remove('hidden');
                     document.getElementById('filtersSection').classList.remove('hidden');
 
-                    goToPage(1);
+                    applyFilters();
                 } else {
                     throw new Error(result.error);
                 }

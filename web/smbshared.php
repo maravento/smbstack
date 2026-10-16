@@ -338,7 +338,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
             }
 
             $dest = $dest_dir . '/' . basename($item_full);
-            if (file_exists($dest) || is_link($dest)) $dest .= '_' . time();
+            if (file_exists($dest) || is_link($dest)) {
+                $dest .= '_' . time();
+                $dest_base = $dest;
+                $version = 1;
+                while (file_exists($dest) || is_link($dest)) {
+                    $dest = $dest_base . '_' . $version++;
+                }
+            }
 
             if (!rename($item_full, $dest)) {
                 $recycle_msg = 'error';

@@ -163,13 +163,11 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
       <p>Every cron entry of the project lives in <code>/etc/cron.d/smbstack</code>. <code>smbsetup.sh</code>, <code>tools/smbwatch.sh</code>, <code>tools/smbreport.sh</code> and <code>tools/smbbk.sh</code> add or remove their own line in that file.</p>
       <p>Each line names the user that runs the task, as required by the <code>/etc/cron.d</code> format. The scripts add or remove only their own entries in <code>/etc/cron.d/smbstack</code>.</p>
       <p><code>--uninstall</code> deletes the file.</p>
-      <p>Installations made before this change keep their entries in root's crontab. The installer removes them, identified by the full script path.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p>Todas las entradas de cron del proyecto viven en <code>/etc/cron.d/smbstack</code>. <code>smbsetup.sh</code>, <code>tools/smbwatch.sh</code>, <code>tools/smbreport.sh</code> y <code>tools/smbbk.sh</code> agregan o eliminan su propia línea en ese archivo.</p>
       <p>Cada línea indica el usuario que ejecutará la tarea, como requiere el formato de <code>/etc/cron.d</code>. Los scripts agregan o eliminan únicamente sus propias entradas en <code>/etc/cron.d/smbstack</code>.</p>
       <p><code>--uninstall</code> elimina el archivo.</p>
-      <p>Las instalaciones anteriores a este cambio conservan sus entradas en el crontab de root. El instalador las retira, identificadas por la ruta completa del script.</p>
     </td>
   </tr>
 </table>
@@ -214,7 +212,7 @@ sudo bash smbsetup.sh --install
 |--------|-------------|-------------|
 | Shared folder name | Name for the shared folder (created under `/home/$local_user/`) | Nombre de la carpeta compartida (creada bajo `/home/$local_user/`) |
 | Network interface | Selected from available interfaces listed. The Samba network is derived from its address and prefix | Seleccionada de las interfaces disponibles listadas. La red de Samba se deriva de su dirección y prefijo |
-| Samba username | Samba account to create | Cuenta de Samba a crear |
+| Samba password | Password for the automatically detected account | Contraseña de la cuenta detectada automáticamente |
 | Overwrite smb.conf | Only asked if `/etc/samba/smb.conf` already exists | Solo se pregunta si `/etc/samba/smb.conf` ya existe |
 
 <table width="100%">
@@ -801,9 +799,9 @@ ERROR: run 'smbwatch.sh install' first -- abort
   </tr>
 </table>
 
-> `start` registers the `@reboot` entry in `/etc/cron.d/smbstack`, and `stop` removes it. A watcher stopped on purpose stays stopped across a reboot.
+> `install` registers the reboot entry; `uninstall` removes it. `stop` stops the current watcher. `smbload.sh` can restart it during its next check.
 >
-> `start` registra la entrada `@reboot` en `/etc/cron.d/smbstack`, y `stop` la elimina. Un vigilante detenido a propósito sigue detenido tras un reinicio.
+> `install` registra el arranque automático; `uninstall` lo retira. `stop` detiene el monitor actual. `smbload.sh` puede reiniciarlo durante su próxima comprobación.
 
 ### smbbk
 

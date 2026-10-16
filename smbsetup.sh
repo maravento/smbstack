@@ -27,7 +27,7 @@ set -uo pipefail
 
 # root check
 if [ "$(id -u)" != "0" ]; then
-    echo "ERROR: This script must be run as root -- abort"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -- abort" >&2
     exit 1
 fi
 
@@ -36,7 +36,7 @@ script_lock="/var/lock/$(basename "$0" .sh).lock"
 (umask 077; : >> "$script_lock")
 exec 200>"$script_lock"
 if ! flock -n 200; then
-    echo "ERROR: script $(basename "$0") is already running -- abort"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: script $(basename "$0") is already running -- abort" >&2
     exit 1
 fi
 
@@ -44,12 +44,13 @@ script_dir="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 log_file="${script_dir}/smbsetup.log"
 { > "$log_file"; } 2>/dev/null || true
 log() {
-    local msg="$1"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $msg" | tee -a "$log_file" 2>/dev/null || true
+    local msg="$(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo "$msg" >> "$log_file" 2>/dev/null || true
+    if [[ "$1" == ERROR:* ]]; then echo "$msg" >&2; else echo "$msg"; fi
 }
-info() { printf ' \e[32m \e[0m %s\n' "$*"; log "INFO: $*"; }
-warn() { printf ' \e[33m!\e[0m %s\n' "$*"; log "WARNING: $*"; }
-err()  { printf ' \e[31m \e[0m %s\n' "$*" >&2; log "ERROR: $*"; }
+info() { log "INFO: $*"; }
+warn() { log "WARNING: $*"; }
+err()  { log "ERROR: $*"; }
 abort() { err "$*"; exit 1; }
 
 # local_user detection
@@ -85,10 +86,9 @@ detect_local_user() {
 }
 
 if ! local_user=$(detect_local_user); then
-    err "no valid local user found"
-    abort "create one with sudo access -- abort"
+    err "no local user; create one with sudo access -- abort"
 fi
-echo "Using local user: $local_user"
+info "using local user: $local_user"
 
 # dependencies
 for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip inotify-tools procps coreutils findutils sed grep; do
@@ -130,11 +130,23 @@ cron_d_set() {
     local cron_file="/etc/cron.d/smbstack"
     local cron_tmp
 
-    cron_tmp=$(mktemp)
-    [ -f "$cron_file" ] && { grep -vF "$match" "$cron_file" > "$cron_tmp" || true; }
-    [ -n "$line" ] && printf '%s\n' "$line" >> "$cron_tmp"
+    cron_tmp=$(mktemp) || return 1
+    if [ -f "$cron_file" ]; then
+        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
+            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
+        }
+    fi
+    if [ -n "$line" ]; then
+        printf '%s\n' "$line" >> "$cron_tmp" || {
+            rm -f "$cron_tmp"
+            return 1
+        }
+    fi
     if [ -s "$cron_tmp" ]; then
-        install -m 644 -o root -g root "$cron_tmp" "$cron_file"
+        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
+            rm -f "$cron_tmp"
+            return 1
+        fi
     else
         rm -f "$cron_file"
     fi
@@ -440,10 +452,12 @@ do_install() {
     # every file in web/ is application code
     for web_file in "$web_dir"/*; do
         [ -f "$web_file" ] || continue
-        cp -f "$web_file" "$smbstack_web/"
+        cp -f "$web_file" "$smbstack_web/" || abort "cannot copy web files -- abort"
     done
-    chmod -R 755 "$smbstack_web"
-    chown -R www-data:www-data "$smbstack_web"
+    if ! { chmod -R 755 "$smbstack_web" \
+        && chown -R www-data:www-data "$smbstack_web"; }; then
+        abort "cannot set web permissions -- abort"
+    fi
 
     # apache vhosts (both in smbweb.conf)
     cp -f /etc/apache2/ports.conf{,.bak} &>/dev/null
@@ -575,7 +589,7 @@ EOF
                 [Nn])
                     warn "existing smb.conf kept as-is"
                     warn "share, full_audit and recycle not applied -- alert"
-                    echo "Add them manually, or re-run and choose 'y' to deploy the bundled smb.conf."
+                    echo "Add them manually, or re-run and choose 'y' to deploy bundled smb.conf."
                     prompt_smb_net_iface
                     break
                     ;;
@@ -620,20 +634,24 @@ EOF
     fi
 
     # cron: recycle bin weekly cleanup
-    cron_d_set "$share_dir/.recycle/" "@weekly root find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1"
+    cron_d_set "$share_dir/.recycle/" "@weekly root find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -- abort"
 
     # cron: folder size cache cleanup -- entries expire after SIZE_CACHE_TTL,
     # so anything older than an hour is dead weight
-    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1"
+    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -- abort"
 
     # service watchdog
     mkdir -p "$smbstack_tools"
-    install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"
-    cp -f "$tools_dir"/*.sh "$smbstack_tools/"
-    chmod +x "$smbstack_tools"/*.sh
-    chmod 644 "$smbstack_tools/smbstackenv.sh"
+    if ! install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"; then
+        abort "cannot deploy smbstackenv.sh -- abort"
+    fi
+    if ! { cp -f "$tools_dir"/*.sh "$smbstack_tools/" \
+        && chmod +x "$smbstack_tools"/*.sh \
+        && chmod 644 "$smbstack_tools/smbstackenv.sh"; }; then
+        abort "cannot deploy tools -- abort"
+    fi
     # cron: service watchdog
-    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh"
+    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh" || abort "cannot write smbstack cron -- abort"
 
     systemctl daemon-reload
 
@@ -652,7 +670,9 @@ EOF
     echo "Listen 127.0.0.1:3092" >> /etc/apache2/ports.conf
     info "Port 3092 bound to 127.0.0.1"
 
-    systemctl restart smbd winbind rsyslog apache2
+    if ! systemctl restart smbd winbind rsyslog apache2; then
+        abort "cannot start smbstack services -- abort"
+    fi
 
     # create Samba account for local user
     samba_account="$local_user"
@@ -712,8 +732,10 @@ MAX_LOG_LINES=50000
 TRUSTED_PROXIES=$proxy_list
 # =============================================================================
 ENV
-    chown root:www-data "$smbstack_env"
-    chmod 640 "$smbstack_env"
+    if ! { chown root:www-data "$smbstack_env" \
+        && chmod 640 "$smbstack_env"; }; then
+        abort "cannot set smbstack.env permissions -- abort"
+    fi
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         echo "Registering smbbk.sh monthly cron entry ..."
@@ -736,11 +758,9 @@ ENV
     echo "Env file : $smbstack_env"
     echo "Check conf : testparm"
     echo ""
-    echo "NOTE: The shared folder is independent of the Samba installer."
+    echo "NOTE: shared folder is independent of Samba installer."
     echo "To remove it, you must do so manually: rm -rf $share_dir"
     echo "To use a custom path, edit smb.conf and smbweb.conf manually after install."
-    echo ""
-    echo "DONE"
 }
 
 # ------------------------------------------------------------------------------
@@ -748,6 +768,8 @@ ENV
 # ------------------------------------------------------------------------------
 
 do_update() {
+    local update_failed=0
+
     if [ ! -f "$smbstack_env" ]; then
         abort "smbstack is not installed -- abort"
     fi
@@ -767,8 +789,6 @@ do_update() {
         warn "smbbk.sh not found, no backup -- alert"
     fi
 
-    echo ""
-
     # every file in web/ is application code and is always (re)deployed, which
     # also heals installs from before a file was added. The Apache vhost is not
     # here: it lives in sites-available, do_install wrote the network and the
@@ -777,34 +797,57 @@ do_update() {
         [ -f "$source_file" ] || continue
         base_name="$(basename "$source_file")"
         dest_path="$smbstack_web/$base_name"
-        cp -f "$source_file" "$dest_path"
+        if ! cp -f "$source_file" "$dest_path"; then
+            err "cannot update $base_name"
+            update_failed=1
+            continue
+        fi
         escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
-        sed -i "s|your_user|$escaped_user|g" "$dest_path"
-        sed -i "s|compartida|$SHARED_NAME|g" "$dest_path"
-        info "updated $base_name"
+        if sed -i "s|your_user|$escaped_user|g" "$dest_path" \
+            && sed -i "s|compartida|$SHARED_NAME|g" "$dest_path"; then
+            info "updated $base_name"
+        else
+            err "cannot patch $base_name"
+            update_failed=1
+        fi
     done
 
     # tools
     mkdir -p "$smbstack_tools"
-    install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"
+    if ! install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" \
+        "$smbstack_tools/smbstackenv.sh"; then
+        err "cannot update smbstackenv.sh"
+        update_failed=1
+    fi
     for tool_file in "$tools_dir"/*.sh; do
         [ -f "$tool_file" ] || continue
         [ "$(basename "$tool_file")" = smbstackenv.sh ] && continue
         base_name="$(basename "$tool_file")"
-        cp -f "$tool_file" "$smbstack_tools/$base_name"
-        chmod +x "$smbstack_tools/$base_name"
-        info "updated $base_name"
+        if cp -f "$tool_file" "$smbstack_tools/$base_name" \
+            && chmod +x "$smbstack_tools/$base_name"; then
+            info "updated $base_name"
+        else
+            err "cannot update $base_name"
+            update_failed=1
+        fi
     done
 
     mkdir -p "$smbstack_www/.size_cache"
-    chown www-data:www-data "$smbstack_www/.size_cache"
-    chmod 700 "$smbstack_www/.size_cache"
+    if ! chown www-data:www-data "$smbstack_www/.size_cache"; then
+        err "cannot set owner on .size_cache dir"
+        update_failed=1
+    fi
+    if ! chmod 700 "$smbstack_www/.size_cache"; then
+        err "cannot set mode on .size_cache dir"
+        update_failed=1
+    fi
 
+    local cron_failed=0
     # cron: rewrite the project's own entries, so an install from an earlier
     # version picks up any change to a schedule or a command
-    cron_d_set "$SHARED_PATH/.recycle/" "@weekly root find \"$SHARED_PATH/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1"
-    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1"
-    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh"
+    cron_d_set "$SHARED_PATH/.recycle/" "@weekly root find \"$SHARED_PATH/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1" || cron_failed=1
+    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1" || cron_failed=1
+    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh" || cron_failed=1
 
     # these two own their own schedule, so each one writes its own line
     for cron_tool in smbbk.sh smbreport.sh; do
@@ -812,13 +855,24 @@ do_update() {
             "$smbstack_tools/$cron_tool" install || warn "cron entry not registered -- alert"
         fi
     done
-    info "updated cron entries"
+    if [ "$cron_failed" -eq 0 ]; then
+        info "updated cron entries"
+    else
+        err "cannot update smbstack cron"
+        update_failed=1
+    fi
 
     systemctl daemon-reload
-    systemctl restart smbd winbind rsyslog apache2
+    if ! systemctl restart smbd winbind rsyslog apache2; then
+        err "cannot restart smbd winbind rsyslog apache2"
+        update_failed=1
+    fi
 
-    echo ""
-    echo "DONE"
+    if [ "$update_failed" -ne 0 ]; then
+        err "update incomplete, see lines above -- abort"
+        return 1
+    fi
+
 }
 
 # ------------------------------------------------------------------------------
@@ -892,7 +946,6 @@ do_uninstall() {
     systemctl daemon-reload
     systemctl restart apache2 rsyslog
 
-    echo "DONE"
 }
 
 # ------------------------------------------------------------------------------
@@ -958,7 +1011,7 @@ show_menu() {
         menu_option="${menu_option:-5}"
         case "$menu_option" in
             1) do_install; break ;;
-            2) do_update; break ;;
+            2) do_update || exit 1; break ;;
             3) do_uninstall; break ;;
             4) do_status; break ;;
             5) exit 0 ;;
@@ -973,7 +1026,7 @@ log "smbsetup start..."
 
 case "${1:-}" in
     --install) do_install ;;
-    --update) do_update ;;
+    --update) do_update || exit 1 ;;
     --uninstall) do_uninstall ;;
     --status) do_status ;;
     "") show_menu ;;

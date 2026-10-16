@@ -27,17 +27,23 @@ set -uo pipefail
 # path for cron
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# root check
+if [ "$(id -u)" != "0" ]; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -- abort" >&2
+    exit 1
+fi
+
 # logging
 log_file="/var/log/smbstack.log"
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$log_file" 2>/dev/null || true
+    local log_msg="$(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo "$log_msg" >> "$log_file" 2>/dev/null || true
+    if [[ "$1" == ERROR:* ]]; then
+        echo "$log_msg" >&2
+    else
+        echo "$log_msg"
+    fi
 }
-
-# root check
-if [ "$(id -u)" != "0" ]; then
-    echo "ERROR: This script must be run as root -- abort" >&2
-    exit 1
-fi
 
 # prevent overlapping runs
 script_lock="/var/lock/$(basename "$0" .sh).lock"
@@ -77,11 +83,23 @@ cron_d_set() {
     local cron_file="/etc/cron.d/smbstack"
     local cron_tmp
 
-    cron_tmp=$(mktemp)
-    [ -f "$cron_file" ] && { grep -vF "$match" "$cron_file" > "$cron_tmp" || true; }
-    [ -n "$line" ] && printf '%s\n' "$line" >> "$cron_tmp"
+    cron_tmp=$(mktemp) || return 1
+    if [ -f "$cron_file" ]; then
+        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
+            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
+        }
+    fi
+    if [ -n "$line" ]; then
+        printf '%s\n' "$line" >> "$cron_tmp" || {
+            rm -f "$cron_tmp"
+            return 1
+        }
+    fi
     if [ -s "$cron_tmp" ]; then
-        install -m 644 -o root -g root "$cron_tmp" "$cron_file"
+        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
+            rm -f "$cron_tmp"
+            return 1
+        fi
     else
         rm -f "$cron_file"
     fi
@@ -98,26 +116,33 @@ register_cron() {
             log "ERROR: cannot create $(dirname "$installed_path") -- abort"
             exit 1
         fi
-        install -m 644 -o root -g root "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh"
-        install -m 755 -o root -g root "$script_path" "$installed_path"
+        if ! { install -m 644 -o root -g root "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh" \
+            && install -m 755 -o root -g root "$script_path" "$installed_path"; }; then
+            log "ERROR: cannot deploy to $installed_path -- abort"
+            exit 1
+        fi
         log "INFO: deployed to $installed_path"
     fi
 
-    cron_d_set "$installed_path" "0 3 * * * root $installed_path"
+    cron_d_set "$installed_path" "0 3 * * * root $installed_path" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
     log "INFO: cron entry registered, runs daily at 03:00"
     log "INFO: $installed_path"
 }
 
 deregister_cron() {
-    cron_d_set "$installed_path" ""
+    cron_d_set "$installed_path" "" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
     log "INFO: cron entry removed, report kept"
 }
 
 # Build the JSON report from a single walk of the shared folder
 build_report() {
-    local total_files report_tmp
-    report_tmp=$(mktemp)
-    trap 'rm -f "$report_tmp"' RETURN
+    local total_files report_tmp report_tmp_dir
+    report_tmp_dir=$(mktemp -d "${report_json}.XXXXXX") || {
+        log "ERROR: cannot create report temporary -- abort"
+        return 1
+    }
+    report_tmp="$report_tmp_dir/report.json"
+    trap 'rm -f "$report_tmp"; rmdir "$report_tmp_dir"' RETURN
 
     # A file name may contain any byte except NUL and the slash, so the
     # inventory is NUL-delimited and php writes the JSON.
@@ -182,13 +207,16 @@ build_report() {
             echo $json, "\n";
             exit(0);
         ' > "$report_tmp"; then
-        log "ERROR: report not built, previous one kept -- alert"
+        log "ERROR: report not built, previous one kept -- abort"
         return 1
     fi
 
-    mv -f "$report_tmp" "$report_json"
-    chown root:www-data "$report_json"
-    chmod 640 "$report_json"
+    if ! { chown root:www-data "$report_tmp" \
+        && chmod 640 "$report_tmp" \
+        && mv -f "$report_tmp" "$report_json"; }; then
+        log "ERROR: cannot publish report, previous one kept -- abort"
+        return 1
+    fi
     total_files=$(grep -m1 '"total_files"' "$report_json" | tr -dc '0-9')
     log "INFO: report written, $total_files file(s) in $(basename "$SHARED_PATH")"
 }
@@ -258,7 +286,7 @@ if [ ! -d "$SHARED_PATH" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# MAIN
+# ACTIONS
 # ------------------------------------------------------------------------------
 
 log "smbreport start..."
@@ -268,7 +296,7 @@ case "${1:-}" in
     uninstall) deregister_cron ;;
     "")        build_report ;;
     *)         echo "Usage: $0 [install|uninstall]" >&2; exit 1 ;;
-esac
+esac || exit 1
 
 # ------------------------------------------------------------------------------
 # END
