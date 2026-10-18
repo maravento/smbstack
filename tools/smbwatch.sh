@@ -5,16 +5,12 @@
 #
 # smbwatch -- shared folder size monitor for smbstack
 #
-# DESCRIPTION:
-# Watches the first-level folders of the shared folder, and recycles the
-# file that pushes one over its limit. Requires root.
-#
 # USAGE:
-# sudo bash smbwatch.sh install      Ask for the keys and start the watcher
-# sudo bash smbwatch.sh uninstall    Remove the cron entry and the keys
-# sudo bash smbwatch.sh start        Start the watcher
-# sudo bash smbwatch.sh stop         Stop the watcher
-# sudo bash smbwatch.sh status       Report whether the watcher runs
+# sudo bash smbwatch.sh --install      Ask for the keys and --start the watcher
+# sudo bash smbwatch.sh --uninstall    Remove the cron entry and the keys
+# sudo bash smbwatch.sh --start        Start the watcher
+# sudo bash smbwatch.sh --stop         Stop the watcher
+# sudo bash smbwatch.sh --status       Report whether the watcher runs
 #
 # LOG: /var/log/smbwatch.log
 #
@@ -31,7 +27,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # root check
 if [ "$(id -u)" != "0" ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -- abort" >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -abort" >&2
     exit 1
 fi
 
@@ -50,7 +46,7 @@ log() {
 # dependencies
 for dep_pkg in inotify-tools procps coreutils findutils cron util-linux sed grep; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
-        log "ERROR: dependency '$dep_pkg' is not installed -- abort"
+        log "ERROR: dependency '$dep_pkg' is not installed -abort"
         exit 1
     fi
 done
@@ -166,14 +162,14 @@ handle_new_file() {
         if [ -f "$new_file" ]; then
             if ! mv -f --backup=numbered "$new_file" \
                 "$dest_path/$(basename "$new_file")"; then
-                log "WARNING: cannot recycle $(basename "$new_file") -- alert"
+                log "WARNING: cannot recycle $(basename "$new_file") -alert"
                 return 1
             fi
             touch -h "$dest_path/$(basename "$new_file")"
             log "INFO: moved to recycle: $(basename "$new_file")"
         elif [ -d "$new_file" ] && [ -z "$(ls -A "$new_file")" ]; then
             if ! mv -f "$new_file" "$dest_path/$(basename "$new_file")"; then
-                log "WARNING: cannot recycle $(basename "$new_file") -- alert"
+                log "WARNING: cannot recycle $(basename "$new_file") -alert"
                 return 1
             fi
             touch -h "$dest_path/$(basename "$new_file")"
@@ -192,7 +188,7 @@ env_specs=("$smbstack_env root:www-data 640")
 for env_spec in "${env_specs[@]}"; do
     read -r env_path env_owner_want env_perms_want <<< "$env_spec"
     if [ ! -f "$env_path" ]; then
-        log "ERROR: $(basename "$env_path") not found -- abort"
+        log "ERROR: $(basename "$env_path") not found -abort"
         exit 1
     fi
     env_owner=$(stat -c '%U:%G' "$env_path" 2>/dev/null)
@@ -201,9 +197,9 @@ for env_spec in "${env_specs[@]}"; do
        || [[ "$env_perms" != "$env_perms_want" ]]; then
         if chown "$env_owner_want" "$env_path" 2>/dev/null \
            && chmod "$env_perms_want" "$env_path" 2>/dev/null; then
-            log "INFO: $(basename "$env_path") perms fixed -- fixed"
+            log "INFO: $(basename "$env_path") perms fixed -fixed"
         else
-            log "ERROR: cannot fix $(basename "$env_path") perms -- abort"
+            log "ERROR: cannot fix $(basename "$env_path") perms -abort"
             exit 1
         fi
     fi
@@ -217,6 +213,7 @@ source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh"
 env_keys='SHARED_PATH WATCH_LIMIT_GB WATCH_EXCLUDE'
 
 # LOAD
+# Reads smbstack.env; a missing key is handled by the check below
 load_smbstack_env "$smbstack_env" "$env_keys" || true
 
 # KEY CHECK
@@ -247,10 +244,10 @@ check_keys() {
     fi
     if (( ${#key_errors[@]} > 0 )); then
         for key_error in "${key_errors[@]}"; do
-            log "ERROR: $key_error"
+            log "ERROR: $key_error -abort"
         done
-        log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env")"
-        log "ERROR: run '$(basename "$0") install' first -- abort"
+        log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env") -abort"
+        log "ERROR: run '$(basename "$0") --install' first -abort"
         exit 1
     fi
 }
@@ -267,7 +264,7 @@ install_module() {
     local input_limit input_exclude watch_header_added
 
     if [ ! -t 0 ]; then
-        log "ERROR: installation requires answering questions -- abort"
+        log "ERROR: installation requires answering questions -abort"
         exit 1
     fi
 
@@ -279,7 +276,7 @@ install_module() {
         {
             echo ""
             echo "# ============================================================================="
-            echo "# SMBWATCH (added by smbwatch.sh install)"
+            echo "# SMBWATCH (added by smbwatch.sh --install)"
             echo "# ============================================================================="
         } >> "$smbstack_env"
         watch_header_added=1
@@ -297,7 +294,7 @@ install_module() {
             log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
             break
         fi
-        log "INFO: enter a valid number between 1 and 10000 -- retry"
+        log "INFO: enter a valid number between 1 and 10000 -retry"
     done
 
     read -rp "Enter folders to exclude from watch limit (comma-separated, or leave empty): " input_exclude
@@ -315,8 +312,8 @@ install_module() {
         echo "# =============================================================================" >> "$smbstack_env"
     fi
 
-    cron_d_set "$script_path" "@reboot root $script_path start" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
-    log "INFO: added to cron @reboot"
+    cron_d_set "$script_path" "@reboot root $script_path --start" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
+    log "INFO: smbwatch cron registered, runs @reboot"
 
     start
 }
@@ -330,8 +327,8 @@ install_module() {
 uninstall_module() {
     stop
 
-    cron_d_set "$script_path" "" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
-    log "INFO: removed from cron @reboot"
+    cron_d_set "$script_path" "" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
+    log "INFO: smbwatch cron removed (@reboot)"
 
     sed -i '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d' "$smbstack_env"
     sed -i '/^# SMBWATCH (added by smbwatch.sh/,+1d' "$smbstack_env"
@@ -346,12 +343,12 @@ start() {
     (umask 077; : >> "$script_lock")
     exec 200>"$script_lock"
     if ! flock -n 200; then
-        log "ERROR: script $(basename "$0") is already running -- abort"
+        log "ERROR: script $(basename "$0") is already running -abort"
         exit 1
     fi
 
     if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
-        log "ERROR: already running with PID $(cat "$pid_file") -- abort"
+        log "ERROR: already running with PID $(cat "$pid_file") -abort"
         exit 1
     fi
 
@@ -368,7 +365,7 @@ start() {
 
     # BUILD WATCH_DIR from SHARED_PATH first-level subdirs (excluding hidden dirs and excluded folders)
     if ! wait_mounted_path "$SHARED_PATH"; then
-        log "ERROR: shared folder $(basename "$SHARED_PATH") unavailable; check mount -- abort"
+        log "ERROR: shared folder $(basename "$SHARED_PATH") unavailable; check mount -abort"
         exit 1
     fi
 
@@ -388,7 +385,7 @@ start() {
     done < <(find "$SHARED_PATH" -mindepth 1 -maxdepth 1 -type d -print0)
 
     if [ "${#watch_dirs[@]}" -eq 0 ]; then
-        log "ERROR: no subdirectories found in $(basename "$SHARED_PATH") -- abort"
+        log "ERROR: no subdirectories found in $(basename "$SHARED_PATH") -abort"
         exit 1
     fi
 
@@ -429,7 +426,7 @@ start() {
 # STOP
 # Kill the watcher process group and remove its pid file
 stop() {
-    log "INFO: Stopping smbwatch..."
+    log "Stopping smbwatch..."
     if [ -f "$pid_file" ]; then
         local watch_pid process_group
         watch_pid=$(cat "$pid_file")
@@ -442,7 +439,7 @@ stop() {
             fi
             log "INFO: stopped (PID $watch_pid)"
         else
-            log "WARNING: stale PID file removed -- alert"
+            log "WARNING: stale PID file removed -alert"
         fi
         rm -f "$pid_file" "$state_file"
     else
@@ -454,19 +451,19 @@ stop() {
 # STATUS
 # Report whether the watcher is running
 status() {
-    log "INFO: SMBwatch status..."
+    log "SMBwatch status..."
     if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
-        log "INFO:   SMBwatch is RUNNING (PID $(cat "$pid_file"))"
-        log "INFO:   Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
+        log "INFO: SMBwatch is RUNNING (PID $(cat "$pid_file"))"
+        log "INFO: Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
         if [ -f "$state_file" ]; then
             while IFS= read -r watch_dir; do
                 log "INFO: watching $(basename "$watch_dir")"
             done < "$state_file"
         else
-            log "INFO:   Watching    : (unknown, state file missing)"
+            log "INFO: Watching    : (unknown, state file missing)"
         fi
     else
-        log "INFO:   SMBwatch is STOPPED"
+        log "INFO: SMBwatch is STOPPED"
     fi
 }
 
@@ -477,12 +474,12 @@ status() {
 echo "$(date '+%Y-%m-%d %H:%M:%S') smbwatch start..."
 
 case "${1:-}" in
-    install)   install_module ;;
-    uninstall) uninstall_module ;;
-    start)     start ;;
-    stop)      stop ;;
-    status)    status ;;
-    *)         log "INFO: Usage: $(basename "$0") {install|uninstall|start|stop|status}"; exit 1 ;;
+    --install)   install_module ;;
+    --uninstall) uninstall_module ;;
+    --start)     start ;;
+    --stop)      stop ;;
+    --status)    status ;;
+    *)         log "INFO: Usage: $(basename "$0") {--install|--uninstall|--start|--stop|--status}"; exit 1 ;;
 esac || exit 1
 
 # ------------------------------------------------------------------------------

@@ -33,13 +33,13 @@ echo "=== SAMBA AUDIT LOG DIAGNOSTIC ===\n\n";
 
 // Check if file exists
 if (!file_exists($LOG_FILE)) {
-    echo "❌ ERROR: Log file does not exist: $LOG_FILE\n";
+    echo "❌ ERROR: Log file does not exist: $LOG_FILE -abort\n";
     exit(1);
 }
 
 // Check if file is readable
 if (!is_readable($LOG_FILE)) {
-    echo "❌ ERROR: Cannot read log file: $LOG_FILE\n";
+    echo "❌ ERROR: Cannot read log file: $LOG_FILE -abort\n";
     exit(1);
 }
 

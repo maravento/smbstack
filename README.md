@@ -35,10 +35,10 @@
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <p>Tested on Ubuntu 24.04/26.04 LTS. Use on other versions or distributions is at your own risk.</p>
+      <p>WARNING: Only tested on Ubuntu 24.04/26.04 LTS. Other versions or distributions are not tested and are used at your own risk.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <p>Probado en Ubuntu 24.04/26.04 LTS. El uso en otras versiones o distribuciones queda bajo responsabilidad de quien lo instale.</p>
+      <p>ADVERTENCIA: Solo probado en Ubuntu 24.04/26.04 LTS. Otras versiones o distribuciones no están probadas y se usan bajo tu responsabilidad.</p>
     </td>
   </tr>
 </table>
@@ -176,25 +176,24 @@ smbsetup.log                    # In smbsetup.sh's own directory, rewritten on e
 
 ---
 
-### Install
-
-<table width="100%">
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      Download the repository and run the installer:
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      Descarga el repositorio y ejecuta el instalador:
-    </td>
-  </tr>
-</table>
-
 ```bash
 git clone --depth=1 https://github.com/maravento/smbstack.git
 cd smbstack
-sudo bash smbsetup.sh
-# or, to skip the menu and install directly | o, para saltar el menú e instalar directamente
+
+# Install
 sudo bash smbsetup.sh --install
+
+# Update
+sudo bash smbsetup.sh --update
+
+# Uninstall
+sudo bash smbsetup.sh --uninstall
+
+# Status
+sudo bash smbsetup.sh --status
+
+# Interactive menu
+sudo bash smbsetup.sh
 ```
 
 <table width="100%">
@@ -235,26 +234,6 @@ sudo bash smbsetup.sh --install
     </td>
   </tr>
 </table>
-
-### Update & Uninstall
-
-<table width="100%">
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      To update or uninstall SMBstack, download the updated repository, enter the folder and run:
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      Para actualizar o desinstalar SMBstack, descarga el repositorio actualizado, entra a la carpeta y ejecuta:
-    </td>
-  </tr>
-</table>
-
-```bash
-cd smbstack
-sudo bash smbsetup.sh --update
-# or | o
-sudo bash smbsetup.sh --uninstall
-```
 
 | File | `--update` | `--uninstall` |
 |------|-----------|---------------|
@@ -352,10 +331,10 @@ sudo bash smbsetup.sh --status
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbsetup.sh</code> writes the nine keys below during <b>install</b> and never overwrites the file on <b>update</b>. <code>smbwatch.sh install</code> adds two more of its own, <code>WATCH_LIMIT_GB</code> and <code>WATCH_EXCLUDE</code>; see the smbwatch section.
+      <code>smbsetup.sh</code> writes the nine keys below during <b>install</b> and never overwrites the file on <b>update</b>. <code>smbwatch.sh --install</code> adds two more of its own, <code>WATCH_LIMIT_GB</code> and <code>WATCH_EXCLUDE</code>; see the smbwatch section.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbsetup.sh</code> escribe las nueve claves de abajo durante <b>install</b> y no sobrescribe el archivo en <b>update</b>. <code>smbwatch.sh install</code> añade dos propias, <code>WATCH_LIMIT_GB</code> y <code>WATCH_EXCLUDE</code>; ver la sección de smbwatch.
+      <code>smbsetup.sh</code> escribe las nueve claves de abajo durante <b>install</b> y no sobrescribe el archivo en <b>update</b>. <code>smbwatch.sh --install</code> añade dos propias, <code>WATCH_LIMIT_GB</code> y <code>WATCH_EXCLUDE</code>; ver la sección de smbwatch.
     </td>
   </tr>
 </table>
@@ -369,6 +348,7 @@ sudo bash smbsetup.sh --status
 | `SMB_IFACE` | `smbsetup.sh` | Interface Samba binds to | Interfaz a la que se enlaza Samba |
 | `SERVER_IP` | `smbsetup.sh`, `smbshared.php` | Server's own IPv4 on that interface | IPv4 del servidor en esa interfaz |
 | `SMBNAME` | `smbsetup.sh` | Samba account created for the share | Cuenta de Samba creada para el recurso |
+| `SMBREPORT_TOP_ROWS`, `SMBREPORT_TOP_FILES` | `smbreport.sh` | Report ranking limits. Defaults: `30` rows and `50` files, written automatically without questions. Positive integers without leading zeros. Changing these defaults is not recommended. | Límites de los listados del informe. Valores iniciales: `30` filas y `50` archivos, escritos automáticamente sin preguntas. Enteros positivos sin ceros iniciales. No se recomienda modificarlos. |
 | `MAX_LOG_LINES` | `smbapi.php`, `smbaudit-diagnostic.php` | Maximum lines read from the current audit log per request; default `50000`. The audit viewer's own request uses a fixed limit in its JavaScript, so raising this does not change what the UI asks for | Máximo de líneas que se leen del log de auditoría vigente por petición; valor predeterminado `50000`. La petición del visor usa un límite fijo en su JavaScript, así que subir esta clave no cambia lo que pide la interfaz |
 | `TRUSTED_PROXIES` | `smbshared.php` | IPv4 addresses, comma-separated, whose `REMOTE_ADDR` is trusted to carry the real client IP in a header; default `127.0.0.1` | Direcciones IPv4 separadas por comas cuyo `REMOTE_ADDR` se considera fiable para traer la IP real del cliente en un encabezado; valor predeterminado `127.0.0.1` |
 
@@ -705,9 +685,9 @@ sudo cat /etc/cron.d/smbstack
 */5 * * * * root /etc/smbstack/tools/smbload.sh
 ```
 
-> `smbload.sh` reads no configuration of its own. It only checks whether the watcher is running and calls `smbwatch.sh start` if it is not. Until `smbwatch.sh install` has been run from a terminal, that call aborts on its own key check, so `smbload.sh` logs a `-- alert` warning pointing at `smbwatch.log`, where the missing or invalid key is named.
+> `smbload.sh` reads no configuration of its own. It only checks whether the watcher is running and calls `smbwatch.sh --start` if it is not. Until `smbwatch.sh --install` has been run from a terminal, that call aborts on its own key check, so `smbload.sh` logs a `-alert` warning pointing at `smbwatch.log`, where the missing or invalid key is named.
 >
-> `smbload.sh` no lee configuración propia. Solo comprueba si el vigilante corre y llama a `smbwatch.sh start` si no. Hasta que se haya ejecutado `smbwatch.sh install` desde un terminal, esa llamada aborta en su propia verificación de claves, así que `smbload.sh` registra un aviso `-- alert` que apunta a `smbwatch.log`, donde se nombra la clave que falta o es inválida.
+> `smbload.sh` no lee configuración propia. Solo comprueba si el vigilante corre y llama a `smbwatch.sh --start` si no. Hasta que se haya ejecutado `smbwatch.sh --install` desde un terminal, esa llamada aborta en su propia verificación de claves, así que `smbload.sh` registra un aviso `-alert` que apunta a `smbwatch.log`, donde se nombra la clave que falta o es inválida.
 
 ### smbwatch
 
@@ -716,18 +696,18 @@ sudo cat /etc/cron.d/smbstack
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbwatch.sh</code> monitors first-level subfolders and their contents in real time with <code>inotifywait</code>.</p>
       <p>If a folder exceeds its configured size limit, a newly completed or moved-in file is moved to <code>.recycle/smbwatch/&lt;YYYYMMDD&gt;/</code>. This channel is separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code>. See <i>Recycle bin channels</i>.</p>
-      <p><code>smbwatch.sh</code> is managed independently of the installer, through five actions: <code>install</code>, <code>uninstall</code>, <code>start</code>, <code>stop</code> and <code>status</code>.</p>
-      <p><code>install</code> is the only action that changes <code>smbstack.env</code>: it asks for the two values, registers the <code>@reboot</code> entry and starts the watcher. It requires an interactive terminal and is run once. <code>uninstall</code> stops the watcher, removes its cron entry and deletes the two values.</p>
-      <p><code>start</code> never writes: it validates the keys and launches the watcher. If a key is missing or invalid it aborts, naming each failure and telling the operator to run <code>install</code> first. This is the action cron runs on every boot, and the one <code>smbload.sh</code> uses to restart a stopped watcher.</p>
-      <p>The folder list is built once, when the watcher starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel are blocked at the share root. After creating one, run <code>stop</code> and <code>start</code> so the new folder is monitored.</p>
+      <p><code>smbwatch.sh</code> is managed independently of the installer, through five actions: <code>--install</code>, <code>--uninstall</code>, <code>--start</code>, <code>--stop</code> and <code>--status</code>.</p>
+      <p><code>--install</code> is the only action that changes <code>smbstack.env</code>: it asks for the two values, registers the <code>@reboot</code> entry and starts the watcher. It requires an interactive terminal and is run once. <code>--uninstall</code> stops the watcher, removes its cron entry and deletes the two values.</p>
+      <p><code>--start</code> never writes: it validates the keys and launches the watcher. If a key is missing or invalid it aborts, naming each failure and telling the operator to run <code>--install</code> first. This is the action cron runs on every boot, and the one <code>smbload.sh</code> uses to restart a stopped watcher.</p>
+      <p>The folder list is built once, when the watcher starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel are blocked at the share root. After creating one, run <code>--stop</code> and <code>--start</code> so the new folder is monitored.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p><code>smbwatch.sh</code> vigila en tiempo real las carpetas de primer nivel y su contenido mediante <code>inotifywait</code>.</p>
       <p>Si una carpeta supera el límite configurado, mueve a <code>.recycle/smbwatch/&lt;AAAAMMDD&gt;/</code> los archivos que acaban de terminar de escribirse o que acaban de llegar. Este canal es independiente de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code>. Consulta la sección <i>Recycle bin channels</i>.</p>
-      <p><code>smbwatch.sh</code> se administra de forma independiente del instalador, mediante cinco acciones: <code>install</code>, <code>uninstall</code>, <code>start</code>, <code>stop</code> y <code>status</code>.</p>
-      <p><code>install</code> es la única acción que modifica <code>smbstack.env</code>: solicita los dos valores, registra el inicio automático con <code>@reboot</code> y arranca el monitor. Requiere una terminal interactiva y se ejecuta una vez. <code>uninstall</code> detiene el monitor, elimina la entrada de cron y borra esos dos valores.</p>
-      <p><code>start</code> nunca escribe: valida las claves y lanza el vigilante. Si falta una clave o es inválida, aborta nombrando cada fallo e indicando que se ejecute <code>install</code> primero. Esta es la acción que cron ejecuta en cada arranque, y la que usa <code>smbload.sh</code> para reiniciar un vigilante detenido.</p>
-      <p>La lista de carpetas se construye una sola vez, al arrancar el vigilante. Las carpetas de primer nivel solo las crea el administrador desde la consola del servidor, porque los clientes SMB y el panel web no pueden escribir en la raíz del recurso. Después de crear una, ejecuta <code>stop</code> y <code>start</code> para que quede vigilada.</p>
+      <p><code>smbwatch.sh</code> se administra de forma independiente del instalador, mediante cinco acciones: <code>--install</code>, <code>--uninstall</code>, <code>--start</code>, <code>--stop</code> y <code>--status</code>.</p>
+      <p><code>--install</code> es la única acción que modifica <code>smbstack.env</code>: solicita los dos valores, registra el inicio automático con <code>@reboot</code> y arranca el monitor. Requiere una terminal interactiva y se ejecuta una vez. <code>--uninstall</code> detiene el monitor, elimina la entrada de cron y borra esos dos valores.</p>
+      <p><code>--start</code> nunca escribe: valida las claves y lanza el vigilante. Si falta una clave o es inválida, aborta nombrando cada fallo e indicando que se ejecute <code>--install</code> primero. Esta es la acción que cron ejecuta en cada arranque, y la que usa <code>smbload.sh</code> para reiniciar un vigilante detenido.</p>
+      <p>La lista de carpetas se construye una sola vez, al arrancar el vigilante. Las carpetas de primer nivel solo las crea el administrador desde la consola del servidor, porque los clientes SMB y el panel web no pueden escribir en la raíz del recurso. Después de crear una, ejecuta <code>--stop</code> y <code>--start</code> para que quede vigilada.</p>
     </td>
   </tr>
 </table>
@@ -753,48 +733,58 @@ sudo cat /etc/cron.d/smbstack
 ```bash
 # Install (interactive: asks for the two keys, writes them, adds the @reboot
 # cron entry and starts the watcher). Run this once, from a terminal.
-sudo /etc/smbstack/tools/smbwatch.sh install
+sudo /etc/smbstack/tools/smbwatch.sh --install
 
 # Start
-sudo /etc/smbstack/tools/smbwatch.sh start
+sudo /etc/smbstack/tools/smbwatch.sh --start
 
 # Stop
-sudo /etc/smbstack/tools/smbwatch.sh stop
+sudo /etc/smbstack/tools/smbwatch.sh --stop
 
 # Status
-sudo /etc/smbstack/tools/smbwatch.sh status
+sudo /etc/smbstack/tools/smbwatch.sh --status
 
 # Uninstall (stops it, removes the cron entry and both keys)
-sudo /etc/smbstack/tools/smbwatch.sh uninstall
+sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 ```
 
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <p><code>start</code> on a host where <code>install</code> was never run reports every missing key and then aborts, naming the action to run. It collects all the failures first, so one pass is enough to fix them:</p>
+      <p><code>--start</code> on a host where <code>--install</code> was never run reports every missing key and then aborts. It collects all the failures first, so one pass is enough to fix them:</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <p><code>start</code> en un host donde nunca se ejecutó <code>install</code> informa cada clave que falta y luego aborta, nombrando la acción que debe ejecutarse. Recoge todos los fallos primero, así una sola pasada basta para corregirlos:</p>
+      <p><code>--start</code> en un host donde nunca se ejecutó <code>--install</code> informa cada clave que falta y luego aborta. Recoge todos los fallos primero, así una sola pasada basta para corregirlos:</p>
     </td>
   </tr>
 </table>
 
 ```text
-ERROR: WATCH_LIMIT_GB missing line
-ERROR: WATCH_EXCLUDE missing line
-ERROR: 2 key(s) invalid in smbstack.env
-ERROR: run 'smbwatch.sh install' first -- abort
+2026-10-17 12:00:00 ERROR: WATCH_LIMIT_GB missing line -abort
+2026-10-17 12:00:00 ERROR: WATCH_EXCLUDE missing line -abort
+2026-10-17 12:00:00 ERROR: 2 key(s) invalid in smbstack.env -abort
+2026-10-17 12:00:00 ERROR: run 'smbwatch.sh --install' first -abort
 ```
+
+> Processing messages keep their timestamp and have no level or flag. `STATUS` is a viewer label, not text written in the log. Three trailing dots are reserved for these lines; other messages have no final period.
+>
+> Los mensajes de procesamiento conservan la fecha y no llevan nivel ni flag. `STATUS` es una etiqueta del visor; no se escribe en el log. Los tres puntos finales se reservan para estas líneas; los demás mensajes no llevan punto final.
+
+```text
+2026-10-17 12:00:00 Stopping smbwatch...
+2026-10-17 12:00:00 SMBwatch status...
+```
+
 
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
       <p>The list of monitored folders is built once, when <code>smbwatch</code> starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel cannot create them at the root of the shared folder.</p>
-      <p>After adding a folder, restart <code>smbwatch</code> (<code>stop</code> and then <code>start</code>) so that it is included in the monitoring.</p>
+      <p>After adding a folder, restart <code>smbwatch</code> (<code>--stop</code> and then <code>--start</code>) so that it is included in the monitoring.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p>La lista de carpetas monitoreadas se genera una sola vez al iniciar <code>smbwatch</code>. Las carpetas de primer nivel solo pueden ser creadas por el administrador desde el shell del servidor, ya que los clientes SMB y el panel web no pueden crearlas en la raíz de la carpeta compartida.</p>
-      <p>Después de agregar una carpeta, reinicia <code>smbwatch</code> (<code>stop</code> y luego <code>start</code>) para que quede incluida en el monitoreo.</p>
+      <p>Después de agregar una carpeta, reinicia <code>smbwatch</code> (<code>--stop</code> y luego <code>--start</code>) para que quede incluida en el monitoreo.</p>
     </td>
   </tr>
 </table>
@@ -839,8 +829,8 @@ ERROR: run 'smbwatch.sh install' first -- abort
 | Command | Description | Descripción |
 |---|---|---|
 | `sudo bash smbbk.sh` | Create a backup now | Crear una copia ahora |
-| `sudo bash smbbk.sh install` | Register the `@monthly` cron entry | Registrar la entrada mensual en cron |
-| `sudo bash smbbk.sh uninstall` | Remove the cron entry, keeping the archives | Quitar la entrada de cron, conservando los comprimidos |
+| `sudo bash smbbk.sh --install` | Register the `@monthly` cron entry | Registrar la entrada mensual en cron |
+| `sudo bash smbbk.sh --uninstall` | Remove the cron entry, keeping the archives | Quitar la entrada de cron, conservando los comprimidos |
 
 > Backs up SMBstack into `/etc/bak/smbstack/smbbk_<YYYYMMDD_HHMMSS>.zip`, keeping up to 3 archives. Paths that do not exist are skipped. Restore by unzipping it over `/`.
 >

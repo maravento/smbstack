@@ -5,9 +5,6 @@
 #
 # smbsetup -- installer for smbstack
 #
-# DESCRIPTION:
-# Installs, updates or uninstalls smbstack. Requires root.
-#
 # USAGE:
 # sudo bash smbsetup.sh --install      Fresh install
 # sudo bash smbsetup.sh --update       Refresh code and permissions
@@ -27,16 +24,19 @@ set -uo pipefail
 
 # root check
 if [ "$(id -u)" != "0" ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -- abort" >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -abort" >&2
     exit 1
 fi
 
 # prevent overlapping runs
 script_lock="/var/lock/$(basename "$0" .sh).lock"
-(umask 077; : >> "$script_lock")
+(umask 077; : >> "$script_lock") || {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: cannot open $(basename "$script_lock") -abort" >&2
+    exit 1
+}
 exec 200>"$script_lock"
 if ! flock -n 200; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: script $(basename "$0") is already running -- abort" >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: script $(basename "$0") is already running -abort" >&2
     exit 1
 fi
 
@@ -86,14 +86,14 @@ detect_local_user() {
 }
 
 if ! local_user=$(detect_local_user); then
-    err "no local user; create one with sudo access -- abort"
+    err "no local user; create one with sudo access -abort"
 fi
 info "using local user: $local_user"
 
 # dependencies
 for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip inotify-tools procps coreutils findutils sed grep; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
-        abort "dependency '$dep_pkg' is not installed -- abort"
+        abort "'$dep_pkg' is not installed -abort"
     fi
 done
 
@@ -158,9 +158,9 @@ retry_cmd() {
     local attempt=1
     until "$@"; do
         if [ "$attempt" -ge "$max_attempts" ]; then
-            abort "command failed after $max_attempts attempts: $* -- abort"
+            abort "Samba package installation failed -abort"
         fi
-        info "attempt $attempt/$max_attempts: $* -- retry"
+        info "Samba packages: retry $((attempt + 1))/$max_attempts"
         attempt=$((attempt + 1))
         sleep 10
     done
@@ -177,9 +177,9 @@ check_conflicts() {
     done
     if [ "${#found[@]}" -gt 0 ]; then
         for dep_pkg in "${found[@]}"; do
-            err "conflicting $role package: $dep_pkg"
+            warn "conflicting $role: $dep_pkg -alert"
         done
-        abort "remove them with apt purge -- abort"
+        abort "remove them with apt purge -abort"
     fi
 }
 
@@ -188,7 +188,7 @@ check_port() {
     local proto="$1" port="$2" role="$3"
     if [ -n "$(ss -lnH "-${proto,,}" "sport = :$port" 2>/dev/null)" ]; then
         err "${proto^^} port $port in use by another $role"
-        abort "stop that service before installing -- abort"
+        abort "stop that service before installing -abort"
     fi
 }
 
@@ -203,7 +203,7 @@ check_repo() {
     if [ "$missing_dir" -eq 1 ]; then
         echo ""
         err "repository files not found"
-        err "clone it from github.com/maravento/smbstack -- abort"
+        err "clone it from github.com/maravento/smbstack -abort"
         echo ""
         exit 1
     fi
@@ -220,34 +220,31 @@ select_shared_folder() {
         folder_answer="${folder_answer:-shared}"
         if [[ "$folder_answer" =~ [^a-zA-Z0-9_-] ]]; then
             info "invalid folder name"
-            info "use letters, numbers, hyphens, underscores -- retry"
+            info "use letters, numbers, hyphens, underscores -retry"
             folder_answer=""
         else
             break
         fi
     done
     share_dir="/home/$local_user/$folder_answer"
-    setfacl -m u:www-data:--x "/home/$local_user"
-    setfacl -m u:smbguest:--x "/home/$local_user"
+    setfacl -m u:www-data:--x "/home/$local_user" \
+        || warn "cannot set ACL on $(basename "/home/$local_user") -alert"
+    setfacl -m u:smbguest:--x "/home/$local_user" \
+        || warn "cannot set ACL on $(basename "/home/$local_user") -alert"
 
     if [ -d "$share_dir" ]; then
-        echo "Folder '$share_dir' already exists. Verifying permissions..."
-        perms_ok=1
-
         actual_owner=$(stat -c "%U" "$share_dir")
         actual_group=$(stat -c "%G" "$share_dir")
         actual_mode=$(stat -c "%a" "$share_dir")
 
         if [ "$actual_owner" != "$local_user" ] || [ "$actual_group" != "sambashare" ]; then
-            echo "Owner/group mismatch (got $actual_owner:$actual_group, expected $local_user:sambashare). Fixing..."
-            chown "$local_user":sambashare "$share_dir"
-            perms_ok=0
+            chown "$local_user":sambashare "$share_dir" \
+                || warn "cannot set owner and group: $(basename "$share_dir") -alert"
         fi
 
         if [ "$actual_mode" != "755" ]; then
-            echo "Mode mismatch (got $actual_mode, expected 755). Fixing..."
-            chmod 755 "$share_dir"
-            perms_ok=0
+            chmod 755 "$share_dir" \
+                || warn "cannot set permissions on $(basename "$share_dir") -alert"
         fi
 
         while IFS= read -r shared_subdir; do
@@ -255,14 +252,12 @@ select_shared_folder() {
             dir_group=$(stat -c "%G" "$shared_subdir")
             dir_mode=$(stat -c "%a" "$shared_subdir")
             if [ "$dir_owner" != "$local_user" ] || [ "$dir_group" != "sambashare" ]; then
-                echo "Fixing owner/group on: $shared_subdir"
-                chown "$local_user":sambashare "$shared_subdir"
-                perms_ok=0
+                chown "$local_user":sambashare "$shared_subdir" \
+                    || warn "cannot set owner and group: $(basename "$shared_subdir") -alert"
             fi
             if [ "$dir_mode" != "2775" ]; then
-                echo "Fixing mode on: $shared_subdir"
-                chmod 2775 "$shared_subdir"
-                perms_ok=0
+                chmod 2775 "$shared_subdir" \
+                    || warn "cannot set permissions on $(basename "$shared_subdir") -alert"
             fi
         done < <(find "$share_dir" -mindepth 1 -path "$share_dir/.recycle" -prune -o -type d -print)
 
@@ -271,74 +266,104 @@ select_shared_folder() {
             file_group=$(stat -c "%G" "$shared_file")
             file_mode=$(stat -c "%a" "$shared_file")
             if [ "$file_owner" != "$local_user" ] || [ "$file_group" != "sambashare" ]; then
-                echo "Fixing owner/group on: $shared_file"
-                chown "$local_user":sambashare "$shared_file"
-                perms_ok=0
+                chown "$local_user":sambashare "$shared_file" \
+                    || warn "cannot set owner and group: $(basename "$shared_file") -alert"
             fi
             if [ "$file_mode" != "664" ]; then
-                echo "Fixing mode on: $shared_file"
-                chmod 664 "$shared_file"
-                perms_ok=0
+                chmod 664 "$shared_file" \
+                    || warn "cannot set permissions on $(basename "$shared_file") -alert"
             fi
         done < <(find "$share_dir" -mindepth 1 -path "$share_dir/.recycle" -prune -o -type f -print)
 
         if ! getfacl "$share_dir" 2>/dev/null | grep -q "user:www-data:r-x"; then
-            echo "Missing ACL for www-data. Fixing..."
-            setfacl -m u:www-data:r-x "$share_dir"
-            perms_ok=0
+            setfacl -m u:www-data:r-x "$share_dir" \
+                || warn "cannot set ACL on $(basename "$share_dir") -alert"
         fi
         # root ACL: mask r-x (blocks group write on root), default mask rwx (allows group write in subdirs)
-        setfacl -m mask::r-x "$share_dir"
-        setfacl -d -m g:sambashare:rwx "$share_dir"
-        setfacl -d -m mask::rwx "$share_dir"
+        setfacl -m mask::r-x "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
+        setfacl -d -m g:sambashare:rwx "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
+        setfacl -d -m mask::rwx "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
         # recycle bin
         # Each channel is precreated and owned by its own writer, so no SMB
         # client needs write access on .recycle itself. The direct mask blocks
         # group write there; the default mask keeps it inside each channel.
         mkdir -p "$share_dir/.recycle"
-        chown www-data:www-data "$share_dir/.recycle"
-        chmod 755 "$share_dir/.recycle"
+        chown www-data:www-data "$share_dir/.recycle" \
+            || warn "cannot set owner and group: $(basename "$share_dir/.recycle") -alert"
+        chmod 755 "$share_dir/.recycle" \
+            || warn "cannot set permissions on $(basename "$share_dir/.recycle") -alert"
         install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
         install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
-        setfacl -m g:sambashare:rwx "$share_dir/.recycle"
-        setfacl -d -m g:sambashare:rwx "$share_dir/.recycle"
-        setfacl -m mask::r-x "$share_dir/.recycle"
-        setfacl -d -m mask::rwx "$share_dir/.recycle"
-        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data"
-        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data"
-
-        if [ "$perms_ok" -eq 1 ]; then
-            echo "Permissions OK"
-        else
-            echo "Permissions corrected"
-        fi
+        setfacl -m g:sambashare:rwx "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -d -m g:sambashare:rwx "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -m mask::r-x "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -d -m mask::rwx "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
+        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
     else
         sudo -u "$local_user" mkdir -p "$share_dir"
-        chmod 755 "$share_dir"
-        chown "$local_user":sambashare "$share_dir"
+        chmod 755 "$share_dir" \
+            || warn "cannot set permissions on $(basename "$share_dir") -alert"
+        chown "$local_user":sambashare "$share_dir" \
+            || warn "cannot set owner and group: $(basename "$share_dir") -alert"
         sudo -u "$local_user" mkdir -p "$share_dir/DEMO"
         sudo -u "$local_user" bash -c "echo 'this is a demo file' > '$share_dir/DEMO/demo.txt'"
-        find "$share_dir" -mindepth 1 -type d -exec chown "$local_user":sambashare {} \; -exec chmod 2775 {} \;
-        find "$share_dir" -mindepth 1 -type f -exec chown "$local_user":sambashare {} \; -exec chmod 664 {} \;
-        setfacl -m u:www-data:r-x "$share_dir"
-        setfacl -m mask::r-x "$share_dir"
-        setfacl -d -m g:sambashare:rwx "$share_dir"
-        setfacl -d -m mask::rwx "$share_dir"
+        while IFS= read -r shared_subdir; do
+            if chown "$local_user":sambashare "$shared_subdir"; then
+                chmod 2775 "$shared_subdir" \
+                    || warn "cannot set permissions on $(basename "$shared_subdir") -alert"
+            else
+                warn "cannot set owner and group: $(basename "$shared_subdir") -alert"
+            fi
+        done < <(find "$share_dir" -mindepth 1 -type d -print)
+        while IFS= read -r shared_file; do
+            if chown "$local_user":sambashare "$shared_file"; then
+                chmod 664 "$shared_file" \
+                    || warn "cannot set permissions on $(basename "$shared_file") -alert"
+            else
+                warn "cannot set owner and group: $(basename "$shared_file") -alert"
+            fi
+        done < <(find "$share_dir" -mindepth 1 -type f -print)
+        setfacl -m u:www-data:r-x "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
+        setfacl -m mask::r-x "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
+        setfacl -d -m g:sambashare:rwx "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
+        setfacl -d -m mask::rwx "$share_dir" \
+            || warn "cannot set ACL on $(basename "$share_dir") -alert"
         # recycle bin
         # Each channel is precreated and owned by its own writer, so no SMB
         # client needs write access on .recycle itself. The direct mask blocks
         # group write there; the default mask keeps it inside each channel.
         mkdir -p "$share_dir/.recycle"
-        chown www-data:www-data "$share_dir/.recycle"
-        chmod 755 "$share_dir/.recycle"
+        chown www-data:www-data "$share_dir/.recycle" \
+            || warn "cannot set owner and group: $(basename "$share_dir/.recycle") -alert"
+        chmod 755 "$share_dir/.recycle" \
+            || warn "cannot set permissions on $(basename "$share_dir/.recycle") -alert"
         install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
         install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
-        setfacl -m g:sambashare:rwx "$share_dir/.recycle"
-        setfacl -d -m g:sambashare:rwx "$share_dir/.recycle"
-        setfacl -m mask::r-x "$share_dir/.recycle"
-        setfacl -d -m mask::rwx "$share_dir/.recycle"
-        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data"
-        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data"
+        setfacl -m g:sambashare:rwx "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -d -m g:sambashare:rwx "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -m mask::r-x "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -d -m mask::rwx "$share_dir/.recycle" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
+        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data" \
+            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
     fi
 
     echo "Shared folder: $share_dir"
@@ -375,7 +400,7 @@ check_already_installed() {
     if [ "$already_installed" -eq 1 ]; then
         echo ""
         err "Samba is already installed"
-        err "update with: sudo bash smbsetup.sh --update -- abort"
+        err "update with: sudo bash smbsetup.sh --update -abort"
         echo ""
         printf "%b" "$skip_reasons"
         echo ""
@@ -394,12 +419,12 @@ do_install() {
 
     if ! systemctl is-active --quiet apache2; then
         err "apache2 is not running"
-        abort "start it with: systemctl start apache2 -- abort"
+        abort "start it with: systemctl start apache2 -abort"
     fi
 
     if ! systemctl is-active --quiet rsyslog; then
         err "rsyslog is not running"
-        abort "start it with: systemctl start rsyslog -- abort"
+        abort "start it with: systemctl start rsyslog -abort"
     fi
 
     # enable required apache modules
@@ -417,7 +442,6 @@ do_install() {
     # smbguest: dedicated unprivileged samba guest user
     if ! id smbguest &>/dev/null; then
         useradd -r -s /bin/false smbguest
-        echo "smbguest created"
     fi
     usermod -aG sambashare smbguest
     # create samba password for smbguest (random, not used interactively)
@@ -452,11 +476,13 @@ do_install() {
     # every file in web/ is application code
     for web_file in "$web_dir"/*; do
         [ -f "$web_file" ] || continue
-        cp -f "$web_file" "$smbstack_web/" || abort "cannot copy web files -- abort"
+        cp -f "$web_file" "$smbstack_web/" || abort "cannot copy web files -abort"
     done
-    if ! { chmod -R 755 "$smbstack_web" \
-        && chown -R www-data:www-data "$smbstack_web"; }; then
-        abort "cannot set web permissions -- abort"
+    if ! chmod -R 755 "$smbstack_web"; then
+        abort "cannot set Samba web permissions -abort"
+    fi
+    if ! chown -R www-data:www-data "$smbstack_web"; then
+        abort "cannot set Samba web owner and group -abort"
     fi
 
     # apache vhosts (both in smbweb.conf)
@@ -520,7 +546,7 @@ EOF
         # SMBSTACK_IFACE lets a caller (e.g. another installer) supply the
         # interface it already knows, instead of answering the prompt.
         if [ -n "${SMBSTACK_IFACE:-}" ]; then
-            ip link show "$SMBSTACK_IFACE" &>/dev/null || abort "SMBSTACK_IFACE='$SMBSTACK_IFACE' not found on this system -- abort"
+            ip link show "$SMBSTACK_IFACE" &>/dev/null || abort "SMBSTACK_IFACE='$SMBSTACK_IFACE' not found on this system -abort"
             iface_answer="$SMBSTACK_IFACE"
             echo "Network interface: $iface_answer (preset)"
         else
@@ -532,9 +558,9 @@ EOF
                 read -p "Enter network interface [$default_iface]: " iface_answer
                 iface_answer="${iface_answer:-$default_iface}"
                 if [ -z "$iface_answer" ]; then
-                    info "interface cannot be empty -- retry"
+                    info "interface cannot be empty -retry"
                 elif ! ip link show "$iface_answer" &>/dev/null; then
-                    info "interface $iface_answer not found -- retry"
+                    info "interface $iface_answer not found -retry"
                     iface_answer=""
                 else
                     break
@@ -547,7 +573,7 @@ EOF
         # the web panel.
         local iface_cidr iface_only iface_prefix o1 o2 o3 o4 ip_num mask_num net_num
         iface_cidr=$(ip -o -4 addr show dev "$iface_answer" scope global | awk '{print $4; exit}')
-        [[ "$iface_cidr" =~ $UH_CIDR ]] || abort "cannot detect IPv4 address for interface $iface_answer -- abort"
+        [[ "$iface_cidr" =~ $UH_CIDR ]] || abort "cannot detect IPv4 address for interface $iface_answer -abort"
         iface_only="${iface_cidr%/*}"
         iface_prefix="${iface_cidr#*/}"
         IFS=. read -r o1 o2 o3 o4 <<< "$iface_only"
@@ -555,7 +581,7 @@ EOF
         mask_num=$(( 0xFFFFFFFF ^ ((1 << (32 - iface_prefix)) - 1) ))
         net_num=$(( ip_num & mask_num ))
         net_answer="$(( (net_num >> 24) & 255 )).$(( (net_num >> 16) & 255 )).$(( (net_num >> 8) & 255 )).$(( net_num & 255 ))/$iface_prefix"
-        echo "Samba network: $net_answer (from $iface_answer)"
+        info "Samba network: $net_answer ($iface_answer)"
     }
 
     apply_smb_conf_placeholders() {
@@ -566,10 +592,10 @@ EOF
     }
 
     apply_smb_conf_interfaces() {
-        sed -i "s|interfaces = .*|interfaces = 127.0.0.0/8 $net_answer $iface_answer|" /etc/samba/smb.conf
-        sed -i "s|hosts allow = .*|hosts allow = 127.0.0.1, $net_answer|" /etc/samba/smb.conf
-        echo "interfaces set to: 127.0.0.0/8 $net_answer $iface_answer"
-        echo "hosts allow set to: 127.0.0.1, $net_answer"
+        sed -i "s|interfaces = .*|interfaces = 127.0.0.0/8 $net_answer $iface_answer|" /etc/samba/smb.conf \
+            || warn "smb.conf: cannot set interfaces -alert"
+        sed -i "s|hosts allow = .*|hosts allow = 127.0.0.1, $net_answer|" /etc/samba/smb.conf \
+            || warn "smb.conf: cannot set hosts allow -alert"
     }
 
     if [ -f /etc/samba/smb.conf ]; then
@@ -578,8 +604,8 @@ EOF
             overwrite_answer="${overwrite_answer:-n}"
             case "$overwrite_answer" in
                 [Yy])
-                    cp -f /etc/samba/smb.conf{,.bak}
-                    echo "Backup saved: /etc/samba/smb.conf.bak"
+                    cp -f /etc/samba/smb.conf{,.bak} \
+                        && info "smb.conf backup saved as smb.conf.bak"
                     cp -f "$conf_dir/smb.conf" /etc/samba/smb.conf
                     apply_smb_conf_placeholders
                     prompt_smb_net_iface
@@ -587,14 +613,13 @@ EOF
                     break
                     ;;
                 [Nn])
-                    warn "existing smb.conf kept as-is"
-                    warn "share, full_audit and recycle not applied -- alert"
-                    echo "Add them manually, or re-run and choose 'y' to deploy bundled smb.conf."
+                    warn "smb.conf: existing configuration kept"
+                    warn "smb.conf: add share, full_audit and recycle -alert"
                     prompt_smb_net_iface
                     break
                     ;;
                 *)
-                    info "answer y or n -- retry"
+                    info "answer y or n -retry"
                     ;;
             esac
         done
@@ -625,33 +650,29 @@ EOF
     grep -qE '^[[:space:]]*su syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
         sed -i '/^{$/a \	su syslog adm' /etc/logrotate.d/rsyslog
 
-    # -d, not -f: this only validates the config. Forcing a rotation here
-    # would split the current day, and rules.md 8.4 fixes rotations at 00:00.
-    logrotate_out=$(logrotate -d /etc/logrotate.d/samba 2>&1)
-    if echo "$logrotate_out" | grep -qi "error"; then
-        warn "logrotate error -- alert"
-        echo "$logrotate_out"
+    if ! logrotate -d /etc/logrotate.d/samba >/dev/null 2>&1; then
+        warn "logrotate: samba config check failed -alert"
     fi
 
     # cron: recycle bin weekly cleanup
-    cron_d_set "$share_dir/.recycle/" "@weekly root find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -- abort"
+    cron_d_set "$share_dir/.recycle/" "@weekly root find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -abort"
 
     # cron: folder size cache cleanup -- entries expire after SIZE_CACHE_TTL,
     # so anything older than an hour is dead weight
-    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -- abort"
+    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -abort"
 
     # service watchdog
     mkdir -p "$smbstack_tools"
     if ! install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"; then
-        abort "cannot deploy smbstackenv.sh -- abort"
+        abort "cannot deploy smbstackenv.sh -abort"
     fi
     if ! { cp -f "$tools_dir"/*.sh "$smbstack_tools/" \
         && chmod +x "$smbstack_tools"/*.sh \
         && chmod 644 "$smbstack_tools/smbstackenv.sh"; }; then
-        abort "cannot deploy tools -- abort"
+        abort "cannot deploy tools -abort"
     fi
     # cron: service watchdog
-    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh" || abort "cannot write smbstack cron -- abort"
+    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh" || abort "cannot write smbstack cron -abort"
 
     systemctl daemon-reload
 
@@ -659,7 +680,7 @@ EOF
     detected_ip=$(ip -4 addr show "$iface_answer" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
     if ! [[ "$detected_ip" =~ $UH_IPV4 ]]; then
         err "no IPv4 address on $iface_answer"
-        abort "check the interface and run again -- abort"
+        abort "check the interface and run again -abort"
     fi
     # Drop any prior Listen line for this port (a stale IP or a bare
     # "Listen 3092") before adding the current ones.
@@ -671,7 +692,7 @@ EOF
     info "Port 3092 bound to 127.0.0.1"
 
     if ! systemctl restart smbd winbind rsyslog apache2; then
-        abort "cannot start smbstack services -- abort"
+        abort "restart smbd winbind rsyslog apache2 failed -abort"
     fi
 
     # create Samba account for local user
@@ -682,12 +703,12 @@ EOF
     while true; do
         read -s -p "Enter Samba password for $samba_account: " smb_pass; echo
         if [ "${#smb_pass}" -lt 8 ]; then
-            echo "Password must be at least 8 characters. Try again."
+            echo "Password must be at least 8 characters. Try again"
             continue
         fi
         read -s -p "Confirm password: " smb_pass2; echo
         [ "$smb_pass" = "$smb_pass2" ] && break
-        echo "Passwords do not match. Try again."
+        echo "Passwords do not match. Try again"
     done
     printf "%s\n%s\n" "$smb_pass" "$smb_pass" | smbpasswd -a -s "$samba_account"
     unset smb_pass smb_pass2
@@ -723,6 +744,10 @@ SMBNAME=$samba_account
 # its JS code, independent of this value -- raising MAX_LOG_LINES here does
 # not change what the audit viewer UI requests.
 MAX_LOG_LINES=50000
+# Report defaults
+# Changing these defaults is not recommended
+SMBREPORT_TOP_ROWS=30
+SMBREPORT_TOP_FILES=50
 
 # TRUSTED_PROXIES: IPv4 address(es), comma-separated, whose REMOTE_ADDR
 # is trusted to supply the real client IP via CF-Connecting-IP /
@@ -732,19 +757,19 @@ MAX_LOG_LINES=50000
 TRUSTED_PROXIES=$proxy_list
 # =============================================================================
 ENV
-    if ! { chown root:www-data "$smbstack_env" \
-        && chmod 640 "$smbstack_env"; }; then
-        abort "cannot set smbstack.env permissions -- abort"
+    if ! chown root:www-data "$smbstack_env"; then
+        abort "cannot set smbstack.env owner and group -abort"
+    fi
+    if ! chmod 640 "$smbstack_env"; then
+        abort "cannot set smbstack.env permissions -abort"
     fi
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
-        echo "Registering smbbk.sh monthly cron entry ..."
-        "$smbstack_tools/smbbk.sh" install || warn "cron entry not registered -- alert"
+        "$smbstack_tools/smbbk.sh" --install || warn "smbbk.sh: monthly task setup failed -alert"
     fi
 
     if [ -x "$smbstack_tools/smbreport.sh" ]; then
-        echo "Registering smbreport.sh daily cron entry ..."
-        "$smbstack_tools/smbreport.sh" install || warn "cron entry not registered -- alert"
+        "$smbstack_tools/smbreport.sh" --install || warn "smbreport.sh: daily task setup failed -alert"
     fi
 
     echo ""
@@ -758,9 +783,9 @@ ENV
     echo "Env file : $smbstack_env"
     echo "Check conf : testparm"
     echo ""
-    echo "NOTE: shared folder is independent of Samba installer."
+    echo "NOTE: shared folder is independent of Samba installer"
     echo "To remove it, you must do so manually: rm -rf $share_dir"
-    echo "To use a custom path, edit smb.conf and smbweb.conf manually after install."
+    echo "To use a custom path, edit smb.conf and smbweb.conf manually after install"
 }
 
 # ------------------------------------------------------------------------------
@@ -769,24 +794,26 @@ ENV
 
 do_update() {
     local update_failed=0
+    local -a update_failures=()
+    local update_failure
 
     if [ ! -f "$smbstack_env" ]; then
-        abort "smbstack is not installed -- abort"
+        abort "smbstack is not installed -abort"
     fi
 
     # load saved config
     load_smbstack_env "$smbstack_env" "$env_keys"
-    echo "Updating with config: user=$LOCAL_USER shared=$SHARED_PATH net=$SMB_NET iface=$SMB_IFACE"
-    echo ""
+    info "user=$LOCAL_USER shared=$SHARED_PATH"
+    info "net=$SMB_NET iface=$SMB_IFACE"
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         if "$smbstack_tools/smbbk.sh"; then
             info "backup taken with smbbk.sh"
         else
-            warn "backup failed, continuing -- alert"
+            warn "smbbk.sh: backup failed -alert"
         fi
     else
-        warn "smbbk.sh not found, no backup -- alert"
+        warn "smbbk.sh: missing or not executable -alert"
     fi
 
     # every file in web/ is application code and is always (re)deployed, which
@@ -798,8 +825,9 @@ do_update() {
         base_name="$(basename "$source_file")"
         dest_path="$smbstack_web/$base_name"
         if ! cp -f "$source_file" "$dest_path"; then
-            err "cannot update $base_name"
+            warn "cannot update $base_name -alert"
             update_failed=1
+            update_failures+=("cannot update $base_name")
             continue
         fi
         escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
@@ -807,8 +835,9 @@ do_update() {
             && sed -i "s|compartida|$SHARED_NAME|g" "$dest_path"; then
             info "updated $base_name"
         else
-            err "cannot patch $base_name"
+            warn "cannot patch $base_name -alert"
             update_failed=1
+            update_failures+=("cannot patch $base_name")
         fi
     done
 
@@ -816,8 +845,9 @@ do_update() {
     mkdir -p "$smbstack_tools"
     if ! install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" \
         "$smbstack_tools/smbstackenv.sh"; then
-        err "cannot update smbstackenv.sh"
+        warn "cannot update smbstackenv.sh -alert"
         update_failed=1
+        update_failures+=("cannot update smbstackenv.sh")
     fi
     for tool_file in "$tools_dir"/*.sh; do
         [ -f "$tool_file" ] || continue
@@ -827,19 +857,22 @@ do_update() {
             && chmod +x "$smbstack_tools/$base_name"; then
             info "updated $base_name"
         else
-            err "cannot update $base_name"
+            warn "cannot update $base_name -alert"
             update_failed=1
+            update_failures+=("cannot update $base_name")
         fi
     done
 
     mkdir -p "$smbstack_www/.size_cache"
     if ! chown www-data:www-data "$smbstack_www/.size_cache"; then
-        err "cannot set owner on .size_cache dir"
+        warn "cannot set owner and group on .size_cache -alert"
         update_failed=1
+        update_failures+=("cannot set owner and group on .size_cache")
     fi
     if ! chmod 700 "$smbstack_www/.size_cache"; then
-        err "cannot set mode on .size_cache dir"
+        warn "cannot set permissions on .size_cache -alert"
         update_failed=1
+        update_failures+=("cannot set permissions on .size_cache")
     fi
 
     local cron_failed=0
@@ -852,24 +885,28 @@ do_update() {
     # these two own their own schedule, so each one writes its own line
     for cron_tool in smbbk.sh smbreport.sh; do
         if [ -x "$smbstack_tools/$cron_tool" ]; then
-            "$smbstack_tools/$cron_tool" install || warn "cron entry not registered -- alert"
+            "$smbstack_tools/$cron_tool" --install || warn "$cron_tool: scheduled task setup failed -alert"
         fi
     done
     if [ "$cron_failed" -eq 0 ]; then
         info "updated cron entries"
     else
-        err "cannot update smbstack cron"
+        warn "cannot update smbstack cron -alert"
         update_failed=1
+        update_failures+=("cannot update smbstack cron")
     fi
 
     systemctl daemon-reload
     if ! systemctl restart smbd winbind rsyslog apache2; then
-        err "cannot restart smbd winbind rsyslog apache2"
+        warn "restart smbd winbind rsyslog apache2 failed -alert"
         update_failed=1
+        update_failures+=("restart smbd winbind rsyslog apache2 failed")
     fi
 
     if [ "$update_failed" -ne 0 ]; then
-        err "update incomplete, see lines above -- abort"
+        for update_failure in "${update_failures[@]}"; do
+            err "$update_failure -abort"
+        done
         return 1
     fi
 
@@ -880,15 +917,15 @@ do_update() {
 # ------------------------------------------------------------------------------
 
 do_uninstall() {
-    info "Run tools/smbbk.sh first if you want a backup."
+    info "Run tools/smbbk.sh first if you want a backup"
 
     # load samba username and shared path from env
     uninstall_shared_path=""
     if [ -f "$smbstack_env" ]; then
         load_smbstack_env "$smbstack_env" "$env_keys"
         if [ -n "${SMBNAME:-}" ]; then
-            pdbedit -x "$SMBNAME" 2>/dev/null || true
-            echo "Samba user removed: $SMBNAME"
+            pdbedit -x "$SMBNAME" 2>/dev/null \
+                || warn "cannot remove Samba user $SMBNAME -alert"
         fi
         uninstall_shared_path="${SHARED_PATH:-}"
     fi
@@ -907,13 +944,13 @@ do_uninstall() {
     rm -f /etc/apache2/ports.conf.bak
 
     # stop smbwatch and drop its cron entry and keys before removing its files
-    [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" uninstall 2>/dev/null || true
+    [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" --uninstall 2>/dev/null || true
 
     # smbbk.sh cron entry
-    [ -x "$smbstack_tools/smbbk.sh" ] && "$smbstack_tools/smbbk.sh" uninstall || true
+    [ -x "$smbstack_tools/smbbk.sh" ] && "$smbstack_tools/smbbk.sh" --uninstall || true
 
     # smbreport.sh cron entry
-    [ -x "$smbstack_tools/smbreport.sh" ] && "$smbstack_tools/smbreport.sh" uninstall || true
+    [ -x "$smbstack_tools/smbreport.sh" ] && "$smbstack_tools/smbreport.sh" --uninstall || true
 
     # project web directory
     rm -rf "$smbstack_www"
@@ -944,7 +981,7 @@ do_uninstall() {
     DEBIAN_FRONTEND=noninteractive apt-get autoremove -y
 
     systemctl daemon-reload
-    systemctl restart apache2 rsyslog
+    systemctl restart apache2 rsyslog || abort "cannot restart apache2 or rsyslog -abort"
 
 }
 
@@ -1015,7 +1052,7 @@ show_menu() {
             3) do_uninstall; break ;;
             4) do_status; break ;;
             5) exit 0 ;;
-            *) info "invalid option -- retry" ;;
+            *) info "invalid option -retry" ;;
         esac
     done
 }

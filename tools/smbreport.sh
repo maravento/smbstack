@@ -5,14 +5,10 @@
 #
 # smbreport -- disk usage report for smbstack
 #
-# DESCRIPTION:
-# Walks the shared folder and writes the JSON report the web panel reads.
-# Requires root.
-#
 # USAGE:
 # sudo bash smbreport.sh            Build the report now
-# sudo bash smbreport.sh install    Register the daily cron entry
-# sudo bash smbreport.sh uninstall  Remove the cron entry (keeps the report)
+# sudo bash smbreport.sh --install    Register the daily cron entry
+# sudo bash smbreport.sh --uninstall  Remove the cron entry (keeps the report)
 #
 # LOG: /var/log/smbstack.log
 #
@@ -29,7 +25,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # root check
 if [ "$(id -u)" != "0" ]; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -- abort" >&2
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -abort" >&2
     exit 1
 fi
 
@@ -47,17 +43,20 @@ log() {
 
 # prevent overlapping runs
 script_lock="/var/lock/$(basename "$0" .sh).lock"
-(umask 077; : >> "$script_lock")
+(umask 077; : >> "$script_lock") || {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: cannot open $(basename "$script_lock") -abort" >&2
+    exit 1
+}
 exec 200>"$script_lock"
 if ! flock -n 200; then
-    log "ERROR: script $(basename "$0") is already running -- abort"
+    log "ERROR: script $(basename "$0") is already running -abort"
     exit 1
 fi
 
 # dependencies
 for dep_pkg in findutils coreutils util-linux cron php-cli; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
-        log "ERROR: missing dependency '$dep_pkg' -- abort"
+        log "ERROR: dependency '$dep_pkg' is not installed -abort"
         exit 1
     fi
 done
@@ -69,8 +68,7 @@ done
 smbstack_env="/etc/smbstack/smbstack.env"
 installed_path="/etc/smbstack/tools/$(basename "$0")"
 report_json="/var/www/smbstack/web/smbreport.json"
-top_rows=30
-top_files=50
+UH_UINT='^(0|[1-9][0-9]*)$'
 
 # ------------------------------------------------------------------------------
 # FUNCTIONS
@@ -113,32 +111,31 @@ register_cron() {
     script_path="$(readlink -f "$0")"
     if [ "$script_path" != "$installed_path" ]; then
         if ! mkdir -p "$(dirname "$installed_path")"; then
-            log "ERROR: cannot create $(dirname "$installed_path") -- abort"
+            log "ERROR: cannot create $(dirname "$installed_path") -abort"
             exit 1
         fi
         if ! { install -m 644 -o root -g root "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh" \
             && install -m 755 -o root -g root "$script_path" "$installed_path"; }; then
-            log "ERROR: cannot deploy to $installed_path -- abort"
+            log "ERROR: cannot deploy to $installed_path -abort"
             exit 1
         fi
         log "INFO: deployed to $installed_path"
     fi
 
-    cron_d_set "$installed_path" "0 3 * * * root $installed_path" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
-    log "INFO: cron entry registered, runs daily at 03:00"
-    log "INFO: $installed_path"
+    cron_d_set "$installed_path" "0 3 * * * root $installed_path" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
+    log "INFO: smbreport cron registered, runs daily at 03:00"
 }
 
 deregister_cron() {
-    cron_d_set "$installed_path" "" || { log "ERROR: cannot write smbstack cron -- abort"; exit 1; }
-    log "INFO: cron entry removed, report kept"
+    cron_d_set "$installed_path" "" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
+    log "INFO: smbreport cron removed, report kept"
 }
 
 # Build the JSON report from a single walk of the shared folder
 build_report() {
     local total_files report_tmp report_tmp_dir
     report_tmp_dir=$(mktemp -d "${report_json}.XXXXXX") || {
-        log "ERROR: cannot create report temporary -- abort"
+        log "ERROR: cannot create report temporary -abort"
         return 1
     }
     report_tmp="$report_tmp_dir/report.json"
@@ -207,14 +204,14 @@ build_report() {
             echo $json, "\n";
             exit(0);
         ' > "$report_tmp"; then
-        log "ERROR: report not built, previous one kept -- abort"
+        log "ERROR: report not built, previous one kept -abort"
         return 1
     fi
 
     if ! { chown root:www-data "$report_tmp" \
         && chmod 640 "$report_tmp" \
         && mv -f "$report_tmp" "$report_json"; }; then
-        log "ERROR: cannot publish report, previous one kept -- abort"
+        log "ERROR: cannot publish report, previous one kept -abort"
         return 1
     fi
     total_files=$(grep -m1 '"total_files"' "$report_json" | tr -dc '0-9')
@@ -231,7 +228,7 @@ env_specs=("$smbstack_env root:www-data 640")
 for env_spec in "${env_specs[@]}"; do
     read -r env_path env_owner_want env_perms_want <<< "$env_spec"
     if [ ! -f "$env_path" ]; then
-        log "ERROR: $(basename "$env_path") not found -- abort"
+        log "ERROR: $(basename "$env_path") not found -abort"
         exit 1
     fi
     env_owner=$(stat -c '%U:%G' "$env_path" 2>/dev/null)
@@ -240,9 +237,9 @@ for env_spec in "${env_specs[@]}"; do
        || [[ "$env_perms" != "$env_perms_want" ]]; then
         if chown "$env_owner_want" "$env_path" 2>/dev/null \
            && chmod "$env_perms_want" "$env_path" 2>/dev/null; then
-            log "INFO: $(basename "$env_path") perms fixed -- fixed"
+            log "INFO: $(basename "$env_path") perms fixed -fixed"
         else
-            log "ERROR: cannot fix $(basename "$env_path") perms -- abort"
+            log "ERROR: cannot fix $(basename "$env_path") perms -abort"
             exit 1
         fi
     fi
@@ -253,9 +250,10 @@ unset env_owner env_perms
 # LOAD_CONF
 # Read known key=value pairs from a config file, without sourcing it
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh"
-env_keys='SHARED_PATH'
+env_keys='SHARED_PATH SMBREPORT_TOP_ROWS SMBREPORT_TOP_FILES'
 
 # LOAD
+# Reads smbstack.env; a missing key is handled by the check below
 load_smbstack_env "$smbstack_env" "$env_keys" || true
 
 # KEY CHECK
@@ -268,20 +266,31 @@ for env_key in SHARED_PATH; do
         key_errors+=("$env_key not set")
     fi
 done
+for env_key in SMBREPORT_TOP_ROWS SMBREPORT_TOP_FILES; do
+    if ! grep -q "^${env_key}=" "$smbstack_env"; then
+        key_errors+=("$env_key missing line")
+    elif [[ -z "${!env_key:-}" ]]; then
+        key_errors+=("$env_key not set")
+    elif ! [[ "${!env_key}" =~ $UH_UINT ]] || (( ${!env_key} == 0 )); then
+        key_errors+=("$env_key invalid count")
+    fi
+done
 if (( ${#key_errors[@]} > 0 )); then
     for key_error in "${key_errors[@]}"; do
-        log "ERROR: $key_error"
+        log "ERROR: $key_error -abort"
     done
-    log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env") -- abort"
+    log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env") -abort"
     exit 1
 fi
 unset key_errors key_error env_key
+top_rows="$SMBREPORT_TOP_ROWS"
+top_files="$SMBREPORT_TOP_FILES"
 
 # KEY GUARD
 # The whole report is built by walking this path, so a value that no longer
 # matches the filesystem produces an empty report instead of an error.
 if [ ! -d "$SHARED_PATH" ]; then
-    log "ERROR: shared folder '$SHARED_PATH' does not exist -- abort"
+    log "ERROR: shared folder '$SHARED_PATH' does not exist -abort"
     exit 1
 fi
 
@@ -289,17 +298,17 @@ fi
 # ACTIONS
 # ------------------------------------------------------------------------------
 
-log "smbreport start..."
-
 case "${1:-}" in
-    install)   register_cron ;;
-    uninstall) deregister_cron ;;
-    "")        build_report ;;
-    *)         echo "Usage: $0 [install|uninstall]" >&2; exit 1 ;;
+    --install)   register_cron ;;
+    --uninstall) deregister_cron ;;
+    "")        log "smbreport start..."; build_report ;;
+    *)         echo "Usage: $0 [--install|--uninstall]" >&2; exit 1 ;;
 esac || exit 1
 
 # ------------------------------------------------------------------------------
 # END
 # ------------------------------------------------------------------------------
 
-log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+if [ -z "${1:-}" ]; then
+    log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+fi
