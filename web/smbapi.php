@@ -1,7 +1,7 @@
 <?php
 /**
  * Samba Audit Log Reader API
- * File: smbapi.php
+ * FILE: web/smbapi.php
  */
 
 header('Content-Type: application/json');

@@ -4,6 +4,7 @@
 ################################################################################
 #
 # smbsetup -- installer for smbstack
+# FILE: smbsetup.sh
 #
 # USAGE:
 # sudo bash smbsetup.sh --install      Fresh install
@@ -851,10 +852,10 @@ do_update() {
         if "$smbstack_tools/smbbk.sh"; then
             info "backup taken with smbbk.sh"
         else
-            warn "smbbk.sh: backup failed -alert"
+            abort "smbbk.sh: backup failed -abort"
         fi
     else
-        warn "smbbk.sh: missing or not executable -alert"
+        abort "smbbk.sh: missing or not executable -abort"
     fi
 
     # every file in web/ is application code and is always (re)deployed, which
@@ -964,7 +965,15 @@ do_update() {
 # ------------------------------------------------------------------------------
 
 do_uninstall() {
-    info "Run tools/smbbk.sh first if you want a backup"
+    if [ -x "$smbstack_tools/smbbk.sh" ]; then
+        if "$smbstack_tools/smbbk.sh"; then
+            info "backup taken with smbbk.sh"
+        else
+            abort "smbbk.sh: backup failed -abort"
+        fi
+    else
+        abort "smbbk.sh: missing or not executable -abort"
+    fi
 
     # load samba username and shared path from env
     uninstall_shared_path=""
@@ -1099,7 +1108,7 @@ show_menu() {
             2) do_update || exit 1; break ;;
             3) do_uninstall; break ;;
             4) do_status; break ;;
-            5) exit 0 ;;
+            5) break ;;
             *) info "invalid option -retry" ;;
         esac
     done

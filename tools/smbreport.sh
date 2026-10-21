@@ -4,6 +4,7 @@
 ################################################################################
 #
 # smbreport -- disk usage report for smbstack
+# FILE: tools/smbreport.sh
 #
 # USAGE:
 # sudo bash smbreport.sh            Build the report now

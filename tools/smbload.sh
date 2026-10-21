@@ -4,6 +4,7 @@
 ################################################################################
 #
 # smbload -- service watchdog for smbstack
+# FILE: tools/smbload.sh
 #
 # USAGE:
 # sudo bash smbload.sh    Run one check now

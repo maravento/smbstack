@@ -1,5 +1,6 @@
 <?php
 /**
+ * FILE: web/smbaudit-diagnostic.php
  * Samba Audit Log Diagnostic Tool
  * This script helps diagnose issues with log parsing
  * How to use

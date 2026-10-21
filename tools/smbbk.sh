@@ -4,6 +4,7 @@
 ################################################################################
 #
 # smbbk -- configuration backup for smbstack
+# FILE: tools/smbbk.sh
 #
 # USAGE:
 # sudo bash smbbk.sh            Create a backup now
@@ -54,7 +55,7 @@ if ! flock -n 200; then
 fi
 
 # dependencies
-for dep_pkg in zip coreutils util-linux cron; do
+for dep_pkg in zip coreutils findutils util-linux cron; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
         log "ERROR: dependency '$dep_pkg' is not installed -abort"
         exit 1
@@ -224,7 +225,7 @@ backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
 # BACKUP
 # ------------------------------------------------------------------------------
 
-if ! mkdir -p "$backup_dir"; then
+if ! install -d -m 700 -o root -g root "$backup_dir"; then
     log "ERROR: cannot create $backup_dir -abort"
     exit 1
 fi
@@ -277,7 +278,7 @@ fi
 # run can only ever delete its own work. The archive takes its final name once
 # zip has succeeded, which also keeps the retention glob from seeing a partial.
 backup_part="${backup_zip}.part"
-rm -f "$backup_part"
+find "$backup_dir" -mindepth 1 -maxdepth 1 ! -name 'smbbk_*.zip' -exec rm -rf {} +
 if (umask 077; zip -r -q -y "$backup_part" "${backup_list[@]}"); then
     chmod 600 "$backup_part"
     if ! mv -f "$backup_part" "$backup_zip"; then
@@ -290,7 +291,7 @@ if (umask 077; zip -r -q -y "$backup_part" "${backup_list[@]}"); then
     # keep only the last 3
     old_backups=("$backup_dir"/smbbk_*.zip)
     if (( ${#old_backups[@]} > 3 )); then
-        printf '%s\n' "${old_backups[@]}" | sort | head -n -3 | xargs -r rm -f
+        printf '%s\0' "${old_backups[@]}" | sort -z | head -z -n -3 | xargs -0 -r rm -f --
     fi
 else
     rm -f "$backup_part"

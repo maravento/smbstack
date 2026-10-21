@@ -1,4 +1,8 @@
 <!DOCTYPE html>
+<!--
+SMBstack audit viewer
+FILE: web/smbaudit.html
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -762,14 +766,12 @@
                     if (!searchIn.includes(searchText)) return false;
                 }
 
-                if (dateFrom) {
-                    const logDate = log.timestamp.split('T')[0];
-                    if (logDate < dateFrom) return false;
-                }
-
-                if (dateTo) {
-                    const logDate = log.timestamp.split('T')[0];
-                    if (logDate > dateTo) return false;
+                if (dateFrom || dateTo) {
+                    const logDate = log.timestamp
+                        ? formatTimestamp(log.timestamp).slice(0, 10)
+                        : '';
+                    if (dateFrom && logDate < dateFrom) return false;
+                    if (dateTo && logDate > dateTo) return false;
                 }
 
                 if (ipFilter && !log.ip.toLowerCase().includes(ipFilter)) return false;
@@ -925,7 +927,7 @@
                 const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
                 logsToExport = filteredLogs.filter(log => {
                     if (!log.timestamp) return false;
-                    const logDate = log.timestamp.split('T')[0];
+                    const logDate = formatTimestamp(log.timestamp).slice(0, 10);
                     return logDate === today;
                 });
 

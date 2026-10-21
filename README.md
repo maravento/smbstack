@@ -1,3 +1,7 @@
+<!--
+SMBstack documentation
+FILE: README.md
+-->
 # [SMBstack](https://github.com/maravento) — Samba Server Stack
 
 [![status-maintained](https://img.shields.io/badge/status-maintained-purple.svg)](https://github.com/maravento/smbstack)

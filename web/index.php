@@ -3,8 +3,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 //
-// index.php
 // smbstack - Main Container
+// FILE: web/index.php
 // https://github.com/maravento/smbstack
 //
 ////////////////////////////////////////////////////////////////////////////////
@@ -240,9 +240,12 @@ if (!in_array($tab, $allowed_tabs)) $tab = 'shared';
 
 <script>
     function updateClock() {
+        // Local time, not toISOString() (which is always UTC and reads
+        // hours ahead/behind the system clock outside UTC timezones).
         const now = new Date();
+        const pad = n => String(n).padStart(2, '0');
         document.getElementById('clock').textContent =
-            now.toISOString().replace('T', ' ').substring(0, 19);
+            `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
     }
     updateClock();
     setInterval(updateClock, 1000);

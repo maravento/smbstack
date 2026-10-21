@@ -4,6 +4,7 @@
 ################################################################################
 #
 # smbwatch -- shared folder size monitor for smbstack
+# FILE: tools/smbwatch.sh
 #
 # USAGE:
 # sudo bash smbwatch.sh --install      Ask for the keys and --start the watcher

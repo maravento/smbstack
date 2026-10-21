@@ -1,3 +1,5 @@
+/* SMBstack service worker
+   FILE: web/sw.js */
 // SMBstack - Service Worker
 // Caches only the static app shell. Everything under /shared, /audit and
 // /report (folder listings, file downloads, audit log data, the disk report)
