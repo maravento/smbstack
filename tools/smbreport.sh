@@ -277,7 +277,7 @@ for env_key in SMBREPORT_TOP_ROWS SMBREPORT_TOP_FILES; do
 done
 if (( ${#key_errors[@]} > 0 )); then
     for key_error in "${key_errors[@]}"; do
-        log "ERROR: $key_error -abort"
+        log "WARNING: $key_error -alert"
     done
     log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env") -abort"
     exit 1

@@ -408,6 +408,31 @@ check_already_installed() {
     fi
 }
 
+install_project_logrotate() {
+    local rotate_file="/etc/logrotate.d/smbstack"
+    local project_log="/var/log/smbstack.log"
+    if [ ! -f "$project_log" ]; then
+        touch "$project_log" || return 1
+    fi
+    chown root:adm "$project_log" || return 1
+    chmod 640 "$project_log" || return 1
+    cat > "$rotate_file" <<EOF
+$project_log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 640 root adm
+}
+EOF
+    [ "$?" -eq 0 ] || return 1
+    chown root:root "$rotate_file" || return 1
+    chmod 644 "$rotate_file" || return 1
+    info "updated $rotate_file"
+}
+
 do_install() {
     check_already_installed
 
@@ -730,31 +755,45 @@ EOF
 # SMBstack
 # /etc/smbstack/smbstack.env
 # =============================================================================
+
+# General
 LOCAL_USER=$local_user
+
+# Sharing
 SHARED_NAME=$folder_answer
 SHARED_PATH=$share_dir
+
+# Network
 SMB_NET=$net_answer
 SMB_IFACE=$iface_answer
 SERVER_IP=$detected_ip
+
+# Samba
 SMBNAME=$samba_account
 
+# Logs
 # MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
 # file per request, by both smbapi.php and smbaudit-diagnostic.php.
 # NOTE: smbaudit.html's own fetch request uses a fixed limit of 50000 in
 # its JS code, independent of this value -- raising MAX_LOG_LINES here does
 # not change what the audit viewer UI requests.
 MAX_LOG_LINES=50000
-# Report defaults
+
+# Reports
 # Changing these defaults is not recommended
 SMBREPORT_TOP_ROWS=30
 SMBREPORT_TOP_FILES=50
 
+# Proxies
 # TRUSTED_PROXIES: IPv4 address(es), comma-separated, whose REMOTE_ADDR
 # is trusted to supply the real client IP via CF-Connecting-IP /
 # X-Forwarded-For headers (used by web/smbshared.php for audit logging).
 # Default 127.0.0.1 avoids logging the loopback connection of a local
 # tunnel (if any) as the client. Safe to leave as-is for LAN-only use.
 TRUSTED_PROXIES=$proxy_list
+
+# Backup
+BACKUP_DIR=/etc/bak/smbstack
 # =============================================================================
 ENV
     if ! chown root:www-data "$smbstack_env"; then
@@ -763,6 +802,8 @@ ENV
     if ! chmod 640 "$smbstack_env"; then
         abort "cannot set smbstack.env permissions -abort"
     fi
+
+    install_project_logrotate || abort "cannot configure smbstack log rotation -abort"
 
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         "$smbstack_tools/smbbk.sh" --install || warn "smbbk.sh: monthly task setup failed -alert"
@@ -875,6 +916,12 @@ do_update() {
         update_failures+=("cannot set permissions on .size_cache")
     fi
 
+    if ! install_project_logrotate; then
+        warn "cannot configure smbstack log rotation -alert"
+        update_failed=1
+        update_failures+=("cannot configure smbstack log rotation")
+    fi
+
     local cron_failed=0
     # cron: rewrite the project's own entries, so an install from an earlier
     # version picks up any change to a schedule or a command
@@ -965,6 +1012,7 @@ do_uninstall() {
     # logrotate
     [ -f /etc/logrotate.d/samba.bak ] && cp -f /etc/logrotate.d/samba.bak /etc/logrotate.d/samba
     [ -f /etc/logrotate.d/rsyslog.bak ] && cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog
+    rm -f /etc/logrotate.d/smbstack
     rm -f /etc/logrotate.d/smbwatch
 
     # smb.conf

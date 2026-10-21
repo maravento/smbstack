@@ -65,8 +65,6 @@ done
 # VARIABLES
 # ------------------------------------------------------------------------------
 
-backup_dir="/etc/bak/smbstack"
-backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
 installed_path="/etc/smbstack/tools/$(basename "$0")"
 smbstack_env="/etc/smbstack/smbstack.env"
 
@@ -138,11 +136,15 @@ deregister_cron() {
 # Start
 case "${1:-}" in
     --install)
+        log "smbbk start..."
         register_cron
+        log "smbbk done at: $(date '+%Y-%m-%d %H:%M:%S')"
         exit 0
         ;;
     --uninstall)
+        log "smbbk start..."
         deregister_cron
+        log "smbbk done at: $(date '+%Y-%m-%d %H:%M:%S')"
         exit 0
         ;;
     "")
@@ -153,38 +155,6 @@ case "${1:-}" in
         exit 1
         ;;
 esac
-
-# local_user detection
-detect_local_user() {
-    local uid_min uid_max
-    local user uid best_user="" best_uid=999999
-
-    uid_min=$(awk '/^UID_MIN/{print $2}' /etc/login.defs 2>/dev/null)
-    uid_max=$(awk '/^UID_MAX/{print $2}' /etc/login.defs 2>/dev/null)
-    uid_min=${uid_min:-1000}
-    uid_max=${uid_max:-60000}
-
-    while IFS=: read -r user _ uid _ _ _ shell; do
-        [ "$user" = "root" ] && continue
-        [ -z "$uid" ] && continue
-        [ "$uid" -lt "$uid_min" ] && continue
-        [ "$uid" -gt "$uid_max" ] && continue
-
-        case "$shell" in
-            */false|*/nologin) continue ;;
-        esac
-
-        id -nG "$user" 2>/dev/null | grep -qw sudo || continue
-
-        if [ "$uid" -lt "$best_uid" ]; then
-            best_uid="$uid"
-            best_user="$user"
-        fi
-    done </etc/passwd
-
-    [ -n "$best_user" ] || return 1
-    echo "$best_user"
-}
 
 # ------------------------------------------------------------------------------
 # ENV
@@ -218,7 +188,7 @@ unset env_owner env_perms
 # LOAD_CONF
 # Read known key=value pairs from a config file, without sourcing it
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh"
-env_keys='LOCAL_USER'
+env_keys='LOCAL_USER BACKUP_DIR'
 
 # LOAD
 # Reads smbstack.env; a missing key is handled by the check below
@@ -227,34 +197,28 @@ load_smbstack_env "$smbstack_env" "$env_keys" || true
 # KEY CHECK
 # Collect every failure first, then decide -- a single abort reports them all
 key_errors=()
-for env_key in LOCAL_USER; do
+for env_key in LOCAL_USER BACKUP_DIR; do
     if ! grep -q "^${env_key}=" "$smbstack_env"; then
         key_errors+=("$env_key missing line")
     elif [[ -z "${!env_key:-}" ]]; then
         key_errors+=("$env_key not set")
+    elif [ "$env_key" = BACKUP_DIR ] && [[ "$BACKUP_DIR" != /* ]]; then
+        key_errors+=("$env_key invalid absolute path")
     fi
 done
 if (( ${#key_errors[@]} > 0 )); then
     for key_error in "${key_errors[@]}"; do
-        log "ERROR: $key_error -abort"
+        log "WARNING: $key_error -alert"
     done
     log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env") -abort"
     exit 1
 fi
 unset key_errors key_error env_key
 
-# FALLBACK
-# Second layer of protection, behind KEY CHECK -- by design never reached.
-# The sudo-capable account is detected from /etc/passwd when the key is
-# missing, which is also the only case where no account at all is fatal.
-if [ -z "${LOCAL_USER:-}" ]; then
-    log "WARNING: no LOCAL_USER in smbstack.env -fallback"
-    if ! LOCAL_USER=$(detect_local_user); then
-        log "ERROR: no valid local user with sudo access -abort"
-        exit 1
-    fi
-fi
 log "INFO: using local user: $LOCAL_USER"
+
+backup_dir="$BACKUP_DIR"
+backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
 
 # ------------------------------------------------------------------------------
 # BACKUP
@@ -291,6 +255,7 @@ for backup_item in \
     /etc/rsyslog.conf \
     /etc/logrotate.d/samba \
     /etc/logrotate.d/smbwatch \
+    /etc/logrotate.d/smbstack \
     /etc/logrotate.d/rsyslog \
     /lib/systemd/system/smbd.service \
     /etc/cron.d/smbstack \
@@ -317,7 +282,7 @@ if (umask 077; zip -r -q -y "$backup_part" "${backup_list[@]}"); then
     chmod 600 "$backup_part"
     if ! mv -f "$backup_part" "$backup_zip"; then
         rm -f "$backup_part"
-        log "ERROR: $(basename "$backup_zip") failed; check space/permissions -abort"
+        log "ERROR: rename $(basename "$backup_zip"). check chmod -abort"
         exit 1
     fi
     log "INFO: backup written to $(basename "$backup_zip")"
@@ -329,7 +294,7 @@ if (umask 077; zip -r -q -y "$backup_part" "${backup_list[@]}"); then
     fi
 else
     rm -f "$backup_part"
-    log "ERROR: cannot write archive $(basename "$backup_zip") -- check free space and permissions -abort"
+    log "ERROR: $(basename "$backup_zip"). check space/chmod -abort"
     exit 1
 fi
 

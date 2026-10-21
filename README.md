@@ -795,6 +795,15 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 
 ### smbbk
 
+> Project log: `/var/log/smbstack.log`. Installation and update configure daily rotation in `/etc/logrotate.d/smbstack`, keeping seven previous files plus the active log. Compression starts on the next rotation. Empty logs are not rotated; missing logs are tolerated. Squid and Apache keep their own policies.
+>
+> Log del proyecto: `/var/log/smbstack.log`. La instalación y la actualización configuran rotación diaria en `/etc/logrotate.d/smbstack`. Se conservan siete archivos anteriores y el activo. La compresión comienza en la siguiente rotación. Los logs vacíos no se rotan; los ausentes se toleran. Squid y Apache conservan sus propias políticas.
+
+
+> `smbbk.sh` reads `BACKUP_DIR` from `smbstack.env` (Backup block). Default: `/etc/bak/smbstack`. Missing, empty or relative paths abort before backup. Existing configurations require this key.
+>
+> `smbbk.sh` lee `BACKUP_DIR` de `smbstack.env` (bloque Backup). Valor predeterminado: `/etc/bak/smbstack`. Las rutas ausentes, vacías o relativas abortan antes del respaldo. Las configuraciones existentes requieren esta clave.
+
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
