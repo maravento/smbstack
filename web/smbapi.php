@@ -178,11 +178,15 @@ try {
         $limit = min((int)($_GET['limit'] ?? MAX_LINES), MAX_LINES);
         $logs = $reader->getLogs($limit);
 
-        echo json_encode([
+        $payload = json_encode([
             'success' => true,
             'data' => array_values($logs),
             'count' => count($logs)
-        ]);
+        ], JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($payload === false) {
+            throw new Exception("Cannot serialize logs");
+        }
+        echo $payload;
     } elseif ($action === 'getReport') {
         if (!is_readable(REPORT_FILE)) {
             echo json_encode([
