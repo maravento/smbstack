@@ -87,7 +87,7 @@ detect_local_user() {
 }
 
 if ! local_user=$(detect_local_user); then
-    err "no local user; create one with sudo access -abort"
+    abort "no local user; create one with sudo access -abort"
 fi
 info "using local user: $local_user"
 
@@ -794,6 +794,7 @@ SMBREPORT_TOP_FILES=50
 TRUSTED_PROXIES=$proxy_list
 
 # Backup
+# Changing these defaults is not recommended
 BACKUP_DIR=/etc/bak/smbstack
 # =============================================================================
 ENV
@@ -1021,8 +1022,8 @@ do_uninstall() {
     # logrotate
     [ -f /etc/logrotate.d/samba.bak ] && cp -f /etc/logrotate.d/samba.bak /etc/logrotate.d/samba
     [ -f /etc/logrotate.d/rsyslog.bak ] && cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog
-    rm -f /etc/logrotate.d/smbstack
-    rm -f /etc/logrotate.d/smbwatch
+    rm -f /etc/logrotate.d/smbstack && info "Removed /etc/logrotate.d/smbstack"
+    rm -f /etc/logrotate.d/smbwatch && info "Removed /etc/logrotate.d/smbwatch"
 
     # smb.conf
     [ -f /etc/samba/smb.conf.bak ] && cp -f /etc/samba/smb.conf.bak /etc/samba/smb.conf

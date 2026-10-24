@@ -345,7 +345,7 @@ sudo bash smbsetup.sh --status
 
 | Variable | Read by | Description | Descripción |
 |----------|---------|--------------|-------------|
-| `LOCAL_USER` | `smbbk.sh` | Non-root local user that owns the shared folder and the backups | Usuario local sin privilegios que posee la carpeta compartida y las copias |
+| `LOCAL_USER` | `smbbk.sh` | Non-root local user that owns the shared folder. The backups belong to `root`, so `smbbk.sh` only reads this account's `passwd` entry to record it | Usuario local sin privilegios que posee la carpeta compartida. Las copias pertenecen a `root`, así que `smbbk.sh` solo lee la entrada `passwd` de esta cuenta para registrarla |
 | `SHARED_NAME` | `smbshared.php` | Share name as the SMB clients see it | Nombre del recurso tal como lo ven los clientes SMB |
 | `SHARED_PATH` | `smbwatch.sh`, `smbreport.sh`, `smbshared.php` | Absolute path of the shared folder | Ruta absoluta de la carpeta compartida |
 | `SMB_NET` | `smbsetup.sh` | LAN subnet in CIDR form allowed to reach the share | Subred LAN en formato CIDR autorizada a acceder al recurso |
@@ -804,9 +804,9 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 > Log del proyecto: `/var/log/smbstack.log`. La instalación y la actualización configuran rotación diaria en `/etc/logrotate.d/smbstack`. Se conservan siete archivos anteriores y el activo. La compresión comienza en la siguiente rotación. Los logs vacíos no se rotan; los ausentes se toleran. Squid y Apache conservan sus propias políticas.
 
 
-> `smbbk.sh` reads `BACKUP_DIR` from `smbstack.env` (Backup block). Default: `/etc/bak/smbstack`. Missing, empty or relative paths abort before backup. Existing configurations require this key.
+> `smbbk.sh` reads `BACKUP_DIR` from `smbstack.env` (Backup block). Default: `/etc/bak/smbstack`. Changing this default is not recommended. Missing, empty or relative paths abort before backup. Existing configurations require this key.
 >
-> `smbbk.sh` lee `BACKUP_DIR` de `smbstack.env` (bloque Backup). Valor predeterminado: `/etc/bak/smbstack`. Las rutas ausentes, vacías o relativas abortan antes del respaldo. Las configuraciones existentes requieren esta clave.
+> `smbbk.sh` lee `BACKUP_DIR` de `smbstack.env` (bloque Backup). Valor predeterminado: `/etc/bak/smbstack`. No se recomienda modificar este valor. Las rutas ausentes, vacías o relativas abortan antes del respaldo. Las configuraciones existentes requieren esta clave.
 
 <table width="100%">
   <tr>
@@ -1026,14 +1026,14 @@ EOF
       <p>It contains three tables: the thirty extensions with the largest total size, the thirty folders with the largest total size, and the fifty largest files, with their full path. The extensions table includes the file count, the average size and the share they represent of the total.</p>
       <p><code>tools/smbreport.sh</code> walks the shared folder as <code>root</code> and saves the results in a JSON file. Cron runs the script daily at 03:00. Because the walk can take several minutes and use the disk while SMB clients are working, it is scheduled outside working hours.</p>
       <p>The view requests the data from <code>smbapi.php</code>; it does not scan the disk. Until <code>smbreport.sh</code> completes its first scan, the tab reports that no report is available.</p>
-      <p>The report excludes the recycle bin, so its files do not appear in the tables. The JSON file is also unavailable over HTTP: <code>smbapi.php</code> reads it directly from disk instead of serving it from Apache's web root.</p>
+      <p>The report excludes the recycle bin, so its files do not appear in the tables. The JSON file is also unavailable over HTTP: it does sit inside Apache's web root, but <code>smbweb.conf</code> denies it with a <code>&lt;Files smbreport.json&gt;</code> block, so only <code>smbapi.php</code> reads it directly from disk.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p>La vista de informe es la tercera pestaña del panel web. Se accede mediante <code>http://localhost:3092/?tab=report</code>.</p>
       <p>Contiene tres tablas: las treinta extensiones con mayor tamaño total, las treinta carpetas con mayor tamaño total y los cincuenta archivos más grandes, con su ruta completa. La tabla de extensiones incluye el número de archivos, el tamaño promedio y la proporción que representan sobre el total.</p>
       <p><code>tools/smbreport.sh</code> recorre la carpeta compartida como <code>root</code> y guarda los resultados en un archivo JSON. Cron ejecuta el script cada día a las 03:00. Como el recorrido puede tardar varios minutos y usar el disco mientras trabajan los clientes SMB, se programa fuera del horario laboral.</p>
       <p>La vista solicita los datos a <code>smbapi.php</code>; no recorre el disco. Hasta que <code>smbreport.sh</code> complete el primer recorrido, la pestaña indicará que aún no hay un informe disponible.</p>
-      <p>El informe no incluye la papelera, por lo que sus archivos no aparecen en las tablas. El archivo JSON tampoco está disponible por HTTP: <code>smbapi.php</code> lo lee directamente del disco y no lo publica en la raíz web de Apache.</p>
+      <p>El informe no incluye la papelera, por lo que sus archivos no aparecen en las tablas. El archivo JSON tampoco está disponible por HTTP: sí reside dentro de la raíz web de Apache, pero <code>smbweb.conf</code> lo deniega con un bloque <code>&lt;Files smbreport.json&gt;</code>, así que solo <code>smbapi.php</code> lo lee directamente del disco.</p>
     </td>
   </tr>
 </table>
@@ -1121,12 +1121,12 @@ EOF
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <p><strong>CSRF protection.</strong> <code>web/smbshared.php</code> has no login by design. Guest access for the whole LAN, and for the tunnel when it is enabled, is intentional.</p>
+      <p><strong>CSRF protection.</strong> <code>web/smbshared.php</code> has no login by design. Guest access is intentional, but the installer binds Apache to <code>127.0.0.1:3092</code>, so the panel is reachable from the server itself or through a local tunnel, not directly from the LAN.</p>
       <p>What it does have is a per-session token on the four forms that change state: upload, new folder, new file and recycle. A POST is accepted only if the page was actually loaded first.</p>
       <p>This blocks a malicious site from silently auto-submitting a form to your server through a visitor's browser. It does not restrict who can use the browser itself: that is still governed by network reachability, LAN or tunnel.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <p><strong>Protección CSRF.</strong> <code>web/smbshared.php</code> no tiene login por diseño. El acceso de invitado para toda la LAN, y para el túnel cuando está activo, es intencional.</p>
+      <p><strong>Protección CSRF.</strong> <code>web/smbshared.php</code> no tiene login por diseño. El acceso de invitado es intencional, pero el instalador enlaza Apache a <code>127.0.0.1:3092</code>, así que el panel es accesible desde el propio servidor o mediante un túnel local, no directamente desde la LAN.</p>
       <p>Lo que sí tiene es un token por sesión en los cuatro formularios que modifican estado: subir, nueva carpeta, nuevo archivo y papelera. Un POST se acepta solo si la página se cargó antes.</p>
       <p>Esto impide que un sitio malicioso envíe en silencio un formulario a su servidor a través del navegador de un visitante. No restringe quién puede usar el navegador: eso lo sigue gobernando el alcance de red, LAN o túnel.</p>
     </td>

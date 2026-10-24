@@ -70,10 +70,29 @@ smbstack_env="/etc/smbstack/smbstack.env"
 installed_path="/etc/smbstack/tools/$(basename "$0")"
 report_json="/var/www/smbstack/web/smbreport.json"
 UH_UINT='^(0|[1-9][0-9]*)$'
+UH_SINT='^(0|-?[1-9][0-9]*)$'
+UH_MAX=9223372036854775807
+UH_MIN=-9223372036854775808
 
 # ------------------------------------------------------------------------------
 # FUNCTIONS
 # ------------------------------------------------------------------------------
+
+# validation - integer is representable as a signed 64-bit value
+uh_fits() {
+    local value="${1-}" limit
+    [[ "$value" =~ $UH_SINT ]] || return 1
+    if [[ "${value:0:1}" == - ]]; then
+        limit="${UH_MIN#-}"
+        value="${value#-}"
+    else
+        limit="$UH_MAX"
+    fi
+    (( ${#value} < ${#limit} )) && return 0
+    (( ${#value} > ${#limit} )) && return 1
+    [[ "$value" > "$limit" ]] && return 1
+    return 0
+}
 
 # CRON_D
 # Add or replace one line in the project's single cron.d file
@@ -272,8 +291,10 @@ for env_key in SMBREPORT_TOP_ROWS SMBREPORT_TOP_FILES; do
         key_errors+=("$env_key missing line")
     elif [[ -z "${!env_key:-}" ]]; then
         key_errors+=("$env_key not set")
-    elif ! [[ "${!env_key}" =~ $UH_UINT ]] || (( ${!env_key} == 0 )); then
+    elif ! [[ "${!env_key}" =~ $UH_UINT ]] || [[ "${!env_key}" == 0 ]]; then
         key_errors+=("$env_key invalid count")
+    elif ! uh_fits "${!env_key}"; then
+        key_errors+=("$env_key exceeds the Bash integer range")
     fi
 done
 if (( ${#key_errors[@]} > 0 )); then
@@ -300,8 +321,18 @@ fi
 # ------------------------------------------------------------------------------
 
 case "${1:-}" in
-    --install)   register_cron ;;
-    --uninstall) deregister_cron ;;
+    --install)
+        log "smbreport start..."
+        register_cron
+        log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+        exit 0
+        ;;
+    --uninstall)
+        log "smbreport start..."
+        deregister_cron
+        log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+        exit 0
+        ;;
     "")        log "smbreport start..."; build_report ;;
     *)         echo "Usage: $0 [--install|--uninstall]" >&2; exit 1 ;;
 esac || exit 1
@@ -310,6 +341,4 @@ esac || exit 1
 # END
 # ------------------------------------------------------------------------------
 
-if [ -z "${1:-}" ]; then
-    log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
-fi
+log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
