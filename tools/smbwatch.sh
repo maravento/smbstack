@@ -72,34 +72,41 @@ UH_UINT='^(0|[1-9][0-9]*)$'
 # ------------------------------------------------------------------------------
 
 # CRON_D
-# Add or replace one line in the project's single cron.d file
-cron_d_set() {
+# Replace one task; retain other project tasks and serialize writers.
+cron_d_set() (
     local match="$1" line="$2"
     local cron_file="/etc/cron.d/smbstack"
-    local cron_tmp
+    local cron_tmp cron_status
 
-    cron_tmp=$(mktemp) || return 1
+    [ -n "$match" ] || return 1
+    [ ! -L "$cron_file" ] || return 1
+    [ ! -e "$cron_file" ] || [ -f "$cron_file" ] || return 1
+    [ ! -L "${cron_file}.lock" ] || return 1
+    (umask 077; : >> "${cron_file}.lock") || return 1
+    exec 201>"${cron_file}.lock" || return 1
+    flock -x 201 || return 1
+    if [ -e "${cron_file}.update-disabled" ] && [ "${UPDATE_CRON_OWNER:-}" != "$$" ]; then
+        return 1
+    fi
+
+    cron_tmp=$(mktemp "${cron_file}.XXXXXX") || return 1
+    trap 'rm -f -- "$cron_tmp"' EXIT
     if [ -f "$cron_file" ]; then
-        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
-            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
+        grep -vF -- "$match" "$cron_file" > "$cron_tmp" || {
+            cron_status=$?
+            [ "$cron_status" -eq 1 ] || return 1
         }
     fi
     if [ -n "$line" ]; then
-        printf '%s\n' "$line" >> "$cron_tmp" || {
-            rm -f "$cron_tmp"
-            return 1
-        }
+        printf '%s\n' "$line" >> "$cron_tmp" || return 1
     fi
     if [ -s "$cron_tmp" ]; then
-        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
-            rm -f "$cron_tmp"
-            return 1
-        fi
+        chmod 644 "$cron_tmp" && chown root:root "$cron_tmp" || return 1
+        mv -fT -- "$cron_tmp" "$cron_file" || return 1
     else
-        rm -f "$cron_file"
+        rm -f -- "$cron_file" || return 1
     fi
-    rm -f "$cron_tmp"
-}
+)
 
 # $! only captures the PID of the last stage of the "inotifywait | while read"
 # pipeline (the subshell), not inotifywait itself. Guard against that PID
@@ -427,7 +434,7 @@ start() {
 # STOP
 # Kill the watcher process group and remove its pid file
 stop() {
-    log "Stopping smbwatch..."
+    log "EVENT: Stopping smbwatch..."
     if [ -f "$pid_file" ]; then
         local watch_pid process_group
         watch_pid=$(cat "$pid_file")
@@ -452,16 +459,16 @@ stop() {
 # STATUS
 # Report whether the watcher is running
 status() {
-    log "SMBwatch status..."
+    log "EVENT: SMBwatch status..."
     if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
         log "INFO: SMBwatch is RUNNING (PID $(cat "$pid_file"))"
-        log "INFO: Watch limit : ${WATCH_LIMIT_GB:-not set} GB per folder"
+        log "INFO: Watch limit: ${WATCH_LIMIT_GB:-not set} GB per folder"
         if [ -f "$state_file" ]; then
             while IFS= read -r watch_dir; do
                 log "INFO: watching $(basename "$watch_dir")"
             done < "$state_file"
         else
-            log "INFO: Watching    : (unknown, state file missing)"
+            log "INFO: Watching: (unknown, state file missing)"
         fi
     else
         log "INFO: SMBwatch is STOPPED"
@@ -472,7 +479,7 @@ status() {
 # ACTIONS
 # ------------------------------------------------------------------------------
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') smbwatch start..."
+echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch start..."
 
 case "${1:-}" in
     --install)   install_module ;;
@@ -487,4 +494,4 @@ esac || exit 1
 # END
 # ------------------------------------------------------------------------------
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') smbwatch done at: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch done"

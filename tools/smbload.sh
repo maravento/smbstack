@@ -66,7 +66,7 @@ done
 # ------------------------------------------------------------------------------
 
 # start
-log "smbload start..."
+log "EVENT: smbload start..."
 
 # Samba Service (smbd)
 if pgrep -x smbd > /dev/null; then
@@ -123,4 +123,4 @@ fi
 # END
 # ------------------------------------------------------------------------------
 
-log "smbload done at: $(date '+%Y-%m-%d %H:%M:%S')"
+log "EVENT: smbload done"

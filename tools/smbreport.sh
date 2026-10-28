@@ -95,34 +95,41 @@ uh_fits() {
 }
 
 # CRON_D
-# Add or replace one line in the project's single cron.d file
-cron_d_set() {
+# Replace one task; retain other project tasks and serialize writers.
+cron_d_set() (
     local match="$1" line="$2"
     local cron_file="/etc/cron.d/smbstack"
-    local cron_tmp
+    local cron_tmp cron_status
 
-    cron_tmp=$(mktemp) || return 1
+    [ -n "$match" ] || return 1
+    [ ! -L "$cron_file" ] || return 1
+    [ ! -e "$cron_file" ] || [ -f "$cron_file" ] || return 1
+    [ ! -L "${cron_file}.lock" ] || return 1
+    (umask 077; : >> "${cron_file}.lock") || return 1
+    exec 201>"${cron_file}.lock" || return 1
+    flock -x 201 || return 1
+    if [ -e "${cron_file}.update-disabled" ] && [ "${UPDATE_CRON_OWNER:-}" != "$$" ]; then
+        return 1
+    fi
+
+    cron_tmp=$(mktemp "${cron_file}.XXXXXX") || return 1
+    trap 'rm -f -- "$cron_tmp"' EXIT
     if [ -f "$cron_file" ]; then
-        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
-            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
+        grep -vF -- "$match" "$cron_file" > "$cron_tmp" || {
+            cron_status=$?
+            [ "$cron_status" -eq 1 ] || return 1
         }
     fi
     if [ -n "$line" ]; then
-        printf '%s\n' "$line" >> "$cron_tmp" || {
-            rm -f "$cron_tmp"
-            return 1
-        }
+        printf '%s\n' "$line" >> "$cron_tmp" || return 1
     fi
     if [ -s "$cron_tmp" ]; then
-        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
-            rm -f "$cron_tmp"
-            return 1
-        fi
+        chmod 644 "$cron_tmp" && chown root:root "$cron_tmp" || return 1
+        mv -fT -- "$cron_tmp" "$cron_file" || return 1
     else
-        rm -f "$cron_file"
+        rm -f -- "$cron_file" || return 1
     fi
-    rm -f "$cron_tmp"
-}
+)
 
 # Daily at 03:00: a full walk competes for disk with the SMB clients, so it
 # runs when nobody works. The panel only reads what this leaves behind.
@@ -322,18 +329,18 @@ fi
 
 case "${1:-}" in
     --install)
-        log "smbreport start..."
+        log "EVENT: smbreport start..."
         register_cron
-        log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+        log "EVENT: smbreport done"
         exit 0
         ;;
     --uninstall)
-        log "smbreport start..."
+        log "EVENT: smbreport start..."
         deregister_cron
-        log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+        log "EVENT: smbreport done"
         exit 0
         ;;
-    "")        log "smbreport start..."; build_report ;;
+    "")        log "EVENT: smbreport start..."; build_report ;;
     *)         echo "Usage: $0 [--install|--uninstall]" >&2; exit 1 ;;
 esac || exit 1
 
@@ -341,4 +348,4 @@ esac || exit 1
 # END
 # ------------------------------------------------------------------------------
 
-log "smbreport done at: $(date '+%Y-%m-%d %H:%M:%S')"
+log "EVENT: smbreport done"

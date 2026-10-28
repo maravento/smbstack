@@ -92,7 +92,7 @@ fi
 info "using local user: $local_user"
 
 # dependencies
-for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip inotify-tools procps coreutils findutils sed grep; do
+for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep; do
     if ! dpkg -s "$dep_pkg" &>/dev/null; then
         abort "'$dep_pkg' is not installed -abort"
     fi
@@ -114,6 +114,7 @@ smbstack_acl="$smbstack_etc/acl"
 smbstack_env="$smbstack_etc/smbstack.env"
 
 # validation -- one variable per thing validated; use directly with =~
+UH_UINT='^(0|[1-9][0-9]*)$'
 UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
 UH_CIDR='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])/(3[0-2]|[12][0-9]|[0-9])$'
 
@@ -121,37 +122,372 @@ UH_CIDR='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]
 # FUNCTIONS
 # ------------------------------------------------------------------------------
 
-source "$tools_dir/smbstackenv.sh"
-env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME'
+# UPDATE CHECKS
+update_error() {
+    if declare -F err >/dev/null; then
+        err "$* -abort"
+    else
+        log "ERROR: $* -abort"
+    fi
+    exit 1
+}
 
-# CRON_D
-# Add or replace one line in the project's single cron.d file
-cron_d_set() {
-    local match="$1" line="$2"
+update_reset() {
+    update_cron_file="$1"
+    update_files=()
+    update_jobs=()
+    update_services=()
+    update_stopped_services=()
+    update_daemons=()
+    update_copying=0
+    update_cron_paused=0
+    update_cron_existed=0
+    update_cron_already_paused=0
+}
+
+update_file() {
+    update_files+=("$1" "$2" "$3" "$4")
+    case "$2" in *.sh|*.py|*.pl) update_jobs+=("$2") ;; esac
+}
+
+update_target() {
+    update_files+=("" "$1" "${2:-644}" "${3:-root:root}")
+}
+
+update_preflight() {
+    command -v python3 >/dev/null 2>&1 || update_error "python3 is required for update checks"
+    local check_message
+    if check_message=$(python3 - "${update_files[@]}" <<'UPDATE_PY'
+import array, errno, fcntl, os, stat, sys, tempfile
+items = [sys.argv[i:i + 4] for i in range(1, len(sys.argv), 4)]
+space, probes = {}, set()
+def fail(message):
+    print(message)
+    raise SystemExit(1)
+def flags(path):
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        try:
+            value = array.array('L', [0])
+            try:
+                fcntl.ioctl(fd, 0x80086601, value, True)
+            except OSError as exc:
+                if exc.errno not in (errno.ENOTTY, errno.EOPNOTSUPP, errno.EINVAL):
+                    raise
+            else:
+                if value[0] & 0x30:
+                    protection = []
+                    if value[0] & 0x10:
+                        protection.append('immutable')
+                    if value[0] & 0x20:
+                        protection.append('append-only')
+                    fail(os.path.basename(path) + ' is ' + ' and '.join(protection))
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        fail(exc.strerror.lower() + ': ' + os.path.basename(path))
+for source, target, mode, owner in items:
+    if source:
+        try:
+            st = os.lstat(source)
+            if not stat.S_ISREG(st.st_mode):
+                fail('source is not a file: ' + os.path.basename(source))
+            with open(source, 'rb') as stream:
+                stream.read(1)
+        except OSError as exc:
+            fail('cannot read source: ' + os.path.basename(source))
+for source, target, mode, owner in items:
+    target = os.path.abspath(target)
+    directory = mode.startswith('d')
+    try:
+        parent = target if directory else os.path.dirname(target)
+        if os.path.lexists(target):
+            st = os.lstat(target)
+            if (directory and not stat.S_ISDIR(st.st_mode)) or (not directory and not stat.S_ISREG(st.st_mode)):
+                fail(('dst is not a folder: ' if directory else 'dst is not a file: ') + os.path.basename(target))
+            flags(target)
+            if not directory:
+                fd = os.open(target, os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(fd)
+        while not os.path.exists(parent):
+            if os.path.lexists(parent):
+                fail('folder is a symbolic link: ' + parent)
+            parent = os.path.dirname(parent)
+        if not os.path.isdir(parent):
+            fail('not a folder: ' + parent)
+        current = parent
+        while current != '/':
+            if os.path.islink(current):
+                fail('folder is a symbolic link: ' + current)
+            flags(current)
+            current = os.path.dirname(current)
+        fs = os.statvfs(parent)
+        if fs.f_flag & os.ST_RDONLY:
+            fail('filesystem is read-only: ' + parent)
+        if parent not in probes:
+            fd, probe = tempfile.mkstemp(prefix='update-check-', dir=parent)
+            try:
+                os.write(fd, b'update check\n')
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+                os.unlink(probe)
+            probes.add(parent)
+        device = os.stat(parent).st_dev
+        required = os.stat(source).st_size if source else 4096
+        needed, available, label = space.get(device, (0, fs.f_bavail * fs.f_frsize, parent))
+        space[device] = (needed + required + 4096, available, label)
+        if fs.f_favail == 0:
+            fail('no free inodes for dst: ' + os.path.basename(target))
+    except OSError as exc:
+        fail('cannot write dst: ' + os.path.basename(target))
+for needed, available, label in space.values():
+    if available < needed:
+        fail('not enough space to update: ' + label)
+UPDATE_PY
+    ); then
+        :
+    else
+        update_error "$check_message"
+    fi
+}
+
+update_backup() {
+    [ -f "$1" ] && [ -r "$1" ] || update_error "backup script not readable: $(basename "$1")"
+    bash "$1" || update_error "backup failed: $(basename "$1")"
+}
+
+update_begin() {
+    export UPDATE_CRON_OWNER="$$"
+    trap 'update_cleanup "$?"' EXIT
+    local disabled="${update_cron_file}.update-disabled"
+    [ ! -L "${update_cron_file}.lock" ] || update_error "invalid cron lock: $update_cron_file"
+    (umask 077; : >> "${update_cron_file}.lock") || update_error "cannot open cron lock: $update_cron_file"
+    exec 203>"${update_cron_file}.lock" || update_error "cannot open cron lock: $update_cron_file"
+    flock -n 203 || update_error "cron file is being changed: $(basename "$update_cron_file")"
+    if [ -e "$disabled" ] || [ -L "$disabled" ]; then
+        [ -f "$disabled" ] && [ ! -L "$disabled" ] || update_error "invalid paused cron: $(basename "$disabled")"
+        [ ! -e "$update_cron_file" ] || update_error "both active and paused cron exist: $(basename "$update_cron_file")"
+        update_cron_already_paused=1
+        update_cron_paused=1
+    elif [ -e "$update_cron_file" ]; then
+        mv -T -- "$update_cron_file" "$disabled" || update_error "cannot pause cron: $update_cron_file"
+        update_cron_existed=1
+        update_cron_paused=1
+    else
+        (umask 077; set -C; : > "$disabled") || update_error "cannot pause cron: $update_cron_file"
+        update_cron_paused=1
+    fi
+    exec 203>&-
+}
+
+update_pids() {
+    python3 - "$1" <<'UPDATE_PIDS'
+import os, sys
+wanted = os.path.realpath(sys.argv[1])
+for entry in os.scandir('/proc'):
+    if not entry.name.isdigit() or int(entry.name) == os.getpid():
+        continue
+    try:
+        with open(entry.path + '/cmdline', 'rb') as stream:
+            args = [os.fsdecode(value) for value in stream.read().split(b'\0') if value]
+        if args and any(os.path.realpath(value) == wanted for value in args if value.startswith('/')):
+            print(entry.name)
+    except (OSError, ValueError):
+        continue
+UPDATE_PIDS
+}
+
+update_wait() {
+    local script="$1" pids attempt
+    for attempt in {1..30}; do
+        pids=$(update_pids "$script") || update_error "cannot inspect processes: $(basename "$script")"
+        [ -z "$pids" ] && return 0
+        sleep 1
+    done
+    update_error "process still running: $(basename "$script")"
+}
+
+update_stop_daemon() {
+    local script="$1" pids
+    pids=$(update_pids "$script") || update_error "cannot inspect processes: $script"
+    if [ -n "$pids" ]; then
+        update_daemons+=("$script")
+        bash "$script" --stop || update_error "cannot stop daemon: $script"
+        update_wait "$script"
+    fi
+}
+
+update_stop_service() {
+    local unit="$1" state load_state
+    load_state=$(systemctl show -p LoadState --value "$unit") || update_error "cannot inspect service: $unit"
+    [ "$load_state" != not-found ] || return 0
+    state=$(systemctl show -p ActiveState --value "$unit") || update_error "cannot inspect service: $unit"
+    case "$state" in
+        active|reloading|activating|deactivating) update_services+=("$unit") ;;
+        inactive|failed) ;;
+        *) update_error "unexpected service state: $unit ($state)" ;;
+    esac
+    update_stopped_services+=("$unit")
+    systemctl stop "$unit" || update_error "cannot stop service: $unit"
+    state=$(systemctl show -p ActiveState --value "$unit") || update_error "cannot inspect stopped: $unit"
+    [ "$state" = inactive ] || {
+        log "ERROR: $unit state: $state"
+        update_error "$unit did not stop"
+    }
+}
+
+update_wait_jobs() {
+    local script unit state
+    for script in "${update_jobs[@]}"; do
+        update_wait "$script"
+    done
+    for unit in "${update_stopped_services[@]}"; do
+        state=$(systemctl show -p ActiveState --value "$unit") || update_error "cannot inspect stopped: $unit"
+        [ "$state" = inactive ] || update_error "service restarted in update: $unit"
+    done
+}
+
+update_apply() {
+    update_preflight
+    update_copying=1
+    local i source target mode owner
+    for ((i=0; i<${#update_files[@]}; i+=4)); do
+        source="${update_files[i]}"
+        target="${update_files[i+1]}"
+        mode="${update_files[i+2]}"
+        owner="${update_files[i+3]}"
+        if [[ "$mode" == d* ]]; then
+            install -d -m "${mode#d}" -o "${owner%:*}" -g "${owner#*:}" -- "$target" \
+                || update_error "cannot prepare directory: $target"
+            continue
+        fi
+        if [ -z "$source" ]; then
+            if [ ! -d "$(dirname "$target")" ]; then
+                install -d -m 755 -o root -g root -- "$(dirname "$target")" \
+                    || update_error "cannot prepare destination parent: $(basename "$target")"
+            fi
+            continue
+        fi
+        install -D -m "$mode" -o "${owner%:*}" -g "${owner#*:}" -- "$source" "$target" \
+            || update_error "cannot replace file: $(basename "$target")"
+        cmp -s -- "$source" "$target" || {
+            local compared_file
+            compared_file=$(basename "$target")
+            if (( ${#compared_file} <= 19 )); then
+                update_error "src and dst do not match: $compared_file"
+            fi
+            log "ERROR: src and dst: $compared_file"
+            update_error "src and dst do not match"
+        }
+        info "updated $(basename "$target")"
+    done
+}
+
+update_resume() {
+    local unit script state
+    for unit in "${update_services[@]}"; do
+        systemctl start "$unit" || update_error "cannot start service: $unit"
+        state=$(systemctl show -p ActiveState --value "$unit") || update_error "cannot inspect started: $unit"
+        [ "$state" = active ] || {
+            log "ERROR: $unit state: $state"
+            update_error "$unit did not start"
+        }
+    done
+    for script in "${update_daemons[@]}"; do
+        bash "$script" --start || update_error "cannot start daemon: $script"
+        [ -n "$(update_pids "$script")" ] || update_error "daemon did not start: $script"
+    done
+}
+
+update_finish() {
+    update_resume
+    rm -f -- "${update_cron_file}.update-disabled" || update_error "cannot finish cron update: $(basename "$update_cron_file")"
+    trap - EXIT
+    unset UPDATE_CRON_OWNER
+}
+
+update_cleanup() {
+    local status="$1" unit script
+    trap - EXIT
+    if (( update_copying == 0 )); then
+        for unit in "${update_services[@]}"; do
+            systemctl start "$unit" || warn "cannot resume $unit -alert"
+        done
+        for script in "${update_daemons[@]}"; do
+            bash "$script" --start || warn "cannot resume $(basename "$script") -alert"
+        done
+        if (( update_cron_paused && ! update_cron_already_paused )); then
+            if (( update_cron_existed )); then
+                mv -T -- "${update_cron_file}.update-disabled" "$update_cron_file" \
+                    || warn "cannot restore paused cron -alert"
+            else
+                rm -f -- "${update_cron_file}.update-disabled" || warn "cannot clear paused cron -alert"
+            fi
+        fi
+    else
+        if rm -f -- "$update_cron_file"; then
+            warn "update failed; cron remains disabled -alert"
+        else
+            warn "cannot keep project cron paused -alert"
+        fi
+        for unit in "${update_services[@]}"; do
+            systemctl stop "$unit" || warn "cannot keep $unit stopped -alert"
+        done
+        for script in "${update_daemons[@]}"; do
+            bash "$script" --stop || warn "cannot keep $(basename "$script") stopped -alert"
+        done
+    fi
+    (( status != 0 )) || status=1
+    exit "$status"
+}
+
+# CRON FILE
+# Publish the complete project schedule after preparing it successfully.
+cron_d_write() (
     local cron_file="/etc/cron.d/smbstack"
     local cron_tmp
 
-    cron_tmp=$(mktemp) || return 1
-    if [ -f "$cron_file" ]; then
-        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
-            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
-        }
+    [ "$#" -gt 0 ] || return 1
+    [ ! -L "${cron_file}.lock" ] || return 1
+    (umask 077; : >> "${cron_file}.lock") || return 1
+    exec 201>"${cron_file}.lock" || return 1
+    flock -x 201 || return 1
+    if [ -e "${cron_file}.update-disabled" ] && [ "${UPDATE_CRON_OWNER:-}" != "$$" ]; then
+        return 1
     fi
-    if [ -n "$line" ]; then
-        printf '%s\n' "$line" >> "$cron_tmp" || {
-            rm -f "$cron_tmp"
-            return 1
-        }
+    [ ! -L "$cron_file" ] || return 1
+    [ ! -e "$cron_file" ] || [ -f "$cron_file" ] || return 1
+
+    cron_tmp=$(mktemp "${cron_file}.XXXXXX") || return 1
+    trap 'rm -f -- "$cron_tmp"' EXIT
+    {
+        printf '%s\n' '# Managed by the project installer; manual changes are replaced.'
+        printf '%s\n' 'SHELL=/bin/bash' 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+        printf '%s\n' "$@"
+    } > "$cron_tmp" || return 1
+    chmod 644 "$cron_tmp" && chown root:root "$cron_tmp" || return 1
+    mv -fT -- "$cron_tmp" "$cron_file" || return 1
+)
+
+# PROJECT SCHEDULE
+# Publish all tasks defined by this project
+register_project_cron() {
+    local shared_path="$1"
+    local -a project_cron_lines=(
+        "@weekly root find \"$shared_path/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1"
+        "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1"
+        "*/5 * * * * root $smbstack_tools/smbload.sh"
+        "@monthly root $smbstack_tools/smbbk.sh"
+        "0 3 * * * root $smbstack_tools/smbreport.sh"
+    )
+    if grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" && grep -q '^WATCH_EXCLUDE=' "$smbstack_env"; then
+        project_cron_lines+=("@reboot root $smbstack_tools/smbwatch.sh --start")
     fi
-    if [ -s "$cron_tmp" ]; then
-        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
-            rm -f "$cron_tmp"
-            return 1
-        fi
-    else
-        rm -f "$cron_file"
-    fi
-    rm -f "$cron_tmp"
+    cron_d_write "${project_cron_lines[@]}"
 }
 
 retry_cmd() {
@@ -371,6 +707,102 @@ select_shared_folder() {
     echo ""
 }
 
+# LAN SELECTION
+# Select an existing interface and one of its configured IPv4 addresses
+choose_lan_interface() {
+    local preset_iface="${1:-}" excluded_iface="${2:-}"
+    local iface_name iface_choice iface_index iface_addrs
+    local -a lan_candidates=()
+    if [ -n "$preset_iface" ]; then
+        ip link show dev "$preset_iface" >/dev/null 2>&1 || {
+            log "ERROR: LAN interface '$preset_iface' not found -abort"
+            exit 1
+        }
+        [ "$preset_iface" != "$excluded_iface" ] || {
+            log "ERROR: LAN and WAN must differ -abort"
+            exit 1
+        }
+        lan_iface_answer="$preset_iface"
+        return 0
+    fi
+    while IFS= read -r iface_name; do
+        [ "$iface_name" = "$excluded_iface" ] && continue
+        lan_candidates+=("$iface_name")
+    done < <(ip -br link show | awk '$1 != "lo" {sub(/@.*/, "", $1); print $1}')
+    (( ${#lan_candidates[@]} > 0 )) || {
+        log "ERROR: no LAN interface available -abort"
+        exit 1
+    }
+    if (( ${#lan_candidates[@]} == 1 )); then
+        lan_iface_answer="${lan_candidates[0]}"
+        return 0
+    fi
+    echo "Available LAN interfaces:"
+    for iface_index in "${!lan_candidates[@]}"; do
+        iface_name="${lan_candidates[$iface_index]}"
+        iface_addrs=$(ip -4 -o addr show dev "$iface_name" scope global | awk '{print $4}' | paste -sd' ')
+        printf ' [%d] %s (%s)\n' "$((iface_index + 1))" "$iface_name" "${iface_addrs:-no IPv4}"
+    done
+    while true; do
+        read -r -p "Select LAN interface number: " iface_choice || {
+            log "ERROR: cannot read LAN interface selection -abort"
+            exit 1
+        }
+        if [[ "$iface_choice" =~ $UH_UINT ]] && [ "${#iface_choice}" -le 5 ] \
+           && [ "$iface_choice" -ge 1 ] && [ "$iface_choice" -le "${#lan_candidates[@]}" ]; then
+            lan_iface_answer="${lan_candidates[$((iface_choice - 1))]}"
+            return 0
+        fi
+        log "INFO: invalid LAN interface selection -retry"
+    done
+}
+
+read_lan_ipv4() {
+    local selected_iface="$1" preset_ip="${2:-}" ipv4_choice ipv4_index candidate_cidr
+    local -a lan_addresses=()
+    mapfile -t lan_addresses < <(ip -4 -o addr show dev "$selected_iface" scope global | awk '{print $4}')
+    (( ${#lan_addresses[@]} > 0 )) || {
+        log "ERROR: LAN '$selected_iface' has no IPv4 address -abort"
+        exit 1
+    }
+    for candidate_cidr in "${lan_addresses[@]}"; do
+        [[ "$candidate_cidr" =~ $UH_CIDR ]] || {
+            log "ERROR: LAN '$selected_iface' has invalid IPv4/prefix -abort"
+            exit 1
+        }
+    done
+    if [ -n "$preset_ip" ]; then
+        for candidate_cidr in "${lan_addresses[@]}"; do
+            if [ "${candidate_cidr%/*}" = "$preset_ip" ]; then
+                lan_cidr_answer="$candidate_cidr"
+                return 0
+            fi
+        done
+        log "ERROR: requested IPv4 is not configured on LAN -abort"
+        exit 1
+    fi
+    if (( ${#lan_addresses[@]} == 1 )); then
+        lan_cidr_answer="${lan_addresses[0]}"
+        return 0
+    fi
+    echo "IPv4 addresses on LAN '$selected_iface':"
+    for ipv4_index in "${!lan_addresses[@]}"; do
+        printf ' [%d] %s\n' "$((ipv4_index + 1))" "${lan_addresses[$ipv4_index]}"
+    done
+    while true; do
+        read -r -p "Select LAN IPv4 number: " ipv4_choice || {
+            log "ERROR: cannot read LAN IPv4 selection -abort"
+            exit 1
+        }
+        if [[ "$ipv4_choice" =~ $UH_UINT ]] && [ "${#ipv4_choice}" -le 5 ] \
+           && [ "$ipv4_choice" -ge 1 ] && [ "$ipv4_choice" -le "${#lan_addresses[@]}" ]; then
+            lan_cidr_answer="${lan_addresses[$((ipv4_choice - 1))]}"
+            return 0
+        fi
+        log "INFO: invalid LAN IPv4 selection -retry"
+    done
+}
+
 # ------------------------------------------------------------------------------
 # INSTALL
 # ------------------------------------------------------------------------------
@@ -409,6 +841,24 @@ check_already_installed() {
     fi
 }
 
+# APACHE LOGROTATE
+# Apache keeps 14 rotations by default; the projects keep 7
+set_apache_logrotate() {
+    local apache_rotate="/etc/logrotate.d/apache2"
+    [ -f "$apache_rotate" ] || { warn "apache2 has no logrotate file -alert"; return 0; }
+    if grep -qE '^[[:space:]]*rotate[[:space:]]+7$' "$apache_rotate"; then
+        info "${apache_rotate#/etc/} already rotate 7 -skip"
+        return 0
+    fi
+    cp -f "$apache_rotate"{,.bak} &>/dev/null || true
+    sed -i -E 's/^([[:space:]]*)rotate[[:space:]]+[0-9]+$/\1rotate 7/' "$apache_rotate"
+    if grep -qE '^[[:space:]]*rotate[[:space:]]+7$' "$apache_rotate"; then
+        info "${apache_rotate#/etc/} set to rotate 7 -fixed"
+    else
+        warn "cannot set rotate 7 in ${apache_rotate#/etc/} -alert"
+    fi
+}
+
 install_project_logrotate() {
     local rotate_file="/etc/logrotate.d/smbstack"
     local project_log="/var/log/smbstack.log"
@@ -432,6 +882,7 @@ EOF
     chown root:root "$rotate_file" || return 1
     chmod 644 "$rotate_file" || return 1
     info "updated $rotate_file"
+    set_apache_logrotate
 }
 
 do_install() {
@@ -513,7 +964,7 @@ do_install() {
 
     # apache vhosts (both in smbweb.conf)
     cp -f /etc/apache2/ports.conf{,.bak} &>/dev/null
-    cp -f "$conf_dir/smbweb.conf" /etc/apache2/sites-available/smbweb.conf
+    cp -f "$conf_dir/smbweb.conf" /etc/apache2/sites-available/smbweb.conf || abort "cannot deploy smbweb.conf -abort"
     a2ensite -q smbweb.conf
 
     # replace placeholders in deployed files (not in repo)
@@ -569,37 +1020,11 @@ EOF
 
     # smb.conf
     prompt_smb_net_iface() {
-        # SMBSTACK_IFACE lets a caller (e.g. another installer) supply the
-        # interface it already knows, instead of answering the prompt.
-        if [ -n "${SMBSTACK_IFACE:-}" ]; then
-            ip link show "$SMBSTACK_IFACE" &>/dev/null || abort "SMBSTACK_IFACE='$SMBSTACK_IFACE' not found on this system -abort"
-            iface_answer="$SMBSTACK_IFACE"
-            echo "Network interface: $iface_answer (preset)"
-        else
-            local default_iface
-            default_iface=$(ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | head -1)
-            echo "Available interfaces:"
-            ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$' | sed 's/^/ /'
-            while true; do
-                read -p "Enter network interface [$default_iface]: " iface_answer
-                iface_answer="${iface_answer:-$default_iface}"
-                if [ -z "$iface_answer" ]; then
-                    info "interface cannot be empty -retry"
-                elif ! ip link show "$iface_answer" &>/dev/null; then
-                    info "interface $iface_answer not found -retry"
-                    iface_answer=""
-                else
-                    break
-                fi
-            done
-        fi
-
-        # Samba network -- derived from the interface, not asked: its address
-        # and prefix already define the network authorised to use Samba and
-        # the web panel.
+        choose_lan_interface "${SMBSTACK_IFACE:-}"
+        iface_answer="$lan_iface_answer"
+        read_lan_ipv4 "$iface_answer"
         local iface_cidr iface_only iface_prefix o1 o2 o3 o4 ip_num mask_num net_num
-        iface_cidr=$(ip -o -4 addr show dev "$iface_answer" scope global | awk '{print $4; exit}')
-        [[ "$iface_cidr" =~ $UH_CIDR ]] || abort "cannot detect IPv4 address for interface $iface_answer -abort"
+        iface_cidr="$lan_cidr_answer"
         iface_only="${iface_cidr%/*}"
         iface_prefix="${iface_cidr#*/}"
         IFS=. read -r o1 o2 o3 o4 <<< "$iface_only"
@@ -656,11 +1081,11 @@ EOF
         apply_smb_conf_interfaces
     fi
 
-    # veto list required by the include line in smb.conf
-    mkdir -p "$smbstack_acl"
-    cp -f "$acl_dir/commonveto.txt" "$smbstack_acl/commonveto.txt"
-    chmod 644 "$smbstack_acl/commonveto.txt"
-    chown root:root "$smbstack_acl/commonveto.txt"
+    # veto list required by the include line in smb.conf. Open per rules.md 14:
+    # smbd's per-connection child reads the include as the authenticated user.
+    install -d -m 755 -o root -g root "$smbstack_acl"
+    install -m 644 -o root -g root "$acl_dir/commonveto.txt" \
+        "$smbstack_acl/commonveto.txt"
 
     # rsyslog
     cp -f /etc/rsyslog.conf{,.bak} &>/dev/null
@@ -680,13 +1105,6 @@ EOF
         warn "logrotate: samba config check failed -alert"
     fi
 
-    # cron: recycle bin weekly cleanup
-    cron_d_set "$share_dir/.recycle/" "@weekly root find \"$share_dir/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -abort"
-
-    # cron: folder size cache cleanup -- entries expire after SIZE_CACHE_TTL,
-    # so anything older than an hour is dead weight
-    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1" || abort "cannot write smbstack cron -abort"
-
     # service watchdog
     mkdir -p "$smbstack_tools"
     if ! install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" "$smbstack_tools/smbstackenv.sh"; then
@@ -697,8 +1115,6 @@ EOF
         && chmod 644 "$smbstack_tools/smbstackenv.sh"; }; then
         abort "cannot deploy tools -abort"
     fi
-    # cron: service watchdog
-    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh" || abort "cannot write smbstack cron -abort"
 
     systemctl daemon-reload
 
@@ -750,7 +1166,7 @@ EOF
     proxy_list="127.0.0.1"
 
     # save install config
-    mkdir -p "$smbstack_etc"
+    install -d -m 755 -o root -g root "$smbstack_etc"
     cat > "$smbstack_env" <<ENV
 # =============================================================================
 # SMBstack
@@ -807,13 +1223,7 @@ ENV
 
     install_project_logrotate || abort "cannot configure smbstack log rotation -abort"
 
-    if [ -x "$smbstack_tools/smbbk.sh" ]; then
-        "$smbstack_tools/smbbk.sh" --install || warn "smbbk.sh: monthly task setup failed -alert"
-    fi
-
-    if [ -x "$smbstack_tools/smbreport.sh" ]; then
-        "$smbstack_tools/smbreport.sh" --install || warn "smbreport.sh: daily task setup failed -alert"
-    fi
+    register_project_cron "$share_dir" || abort "cannot write smbstack cron -abort"
 
     echo ""
     echo "Audit log : /var/log/samba/log.audit"
@@ -836,129 +1246,40 @@ ENV
 # ------------------------------------------------------------------------------
 
 do_update() {
-    local update_failed=0
-    local -a update_failures=()
-    local update_failure
-
-    if [ ! -f "$smbstack_env" ]; then
-        abort "smbstack is not installed -abort"
-    fi
-
-    # load saved config
-    load_smbstack_env "$smbstack_env" "$env_keys"
-    info "user=$LOCAL_USER shared=$SHARED_PATH"
-    info "net=$SMB_NET iface=$SMB_IFACE"
-
-    if [ -x "$smbstack_tools/smbbk.sh" ]; then
-        if "$smbstack_tools/smbbk.sh"; then
-            info "backup taken with smbbk.sh"
-        else
-            abort "smbbk.sh: backup failed -abort"
-        fi
-    else
-        abort "smbbk.sh: missing or not executable -abort"
-    fi
-
-    # every file in web/ is application code and is always (re)deployed, which
-    # also heals installs from before a file was added. The Apache vhost is not
-    # here: it lives in sites-available, do_install wrote the network and the
-    # paths into it, and a copy would undo that.
-    for source_file in "$web_dir"/*; do
-        [ -f "$source_file" ] || continue
-        base_name="$(basename "$source_file")"
-        dest_path="$smbstack_web/$base_name"
-        if ! cp -f "$source_file" "$dest_path"; then
-            warn "cannot update $base_name -alert"
-            update_failed=1
-            update_failures+=("cannot update $base_name")
-            continue
-        fi
-        escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
-        if sed -i "s|your_user|$escaped_user|g" "$dest_path" \
-            && sed -i "s|compartida|$SHARED_NAME|g" "$dest_path"; then
-            info "updated $base_name"
-        else
-            warn "cannot patch $base_name -alert"
-            update_failed=1
-            update_failures+=("cannot patch $base_name")
-        fi
+    [ -f "$smbstack_env" ] || abort "smbstack is not installed -abort"
+    load_smbstack_env "$smbstack_env" "$env_keys" || abort "cannot read smbstack.env -abort"
+    update_reset /etc/cron.d/smbstack
+    local file mode
+    for file in smbapi.php smbreport.html icon.svg smbaudit.html smbshared.php index.php smbaudit-diagnostic.php sw.js manifest.json; do
+        update_file "$web_dir/$file" "$smbstack_web/$file" 755 www-data:www-data
     done
-
-    # tools
-    mkdir -p "$smbstack_tools"
-    if ! install -m 644 -o root -g root "$tools_dir/smbstackenv.sh" \
-        "$smbstack_tools/smbstackenv.sh"; then
-        warn "cannot update smbstackenv.sh -alert"
-        update_failed=1
-        update_failures+=("cannot update smbstackenv.sh")
-    fi
-    for tool_file in "$tools_dir"/*.sh; do
-        [ -f "$tool_file" ] || continue
-        [ "$(basename "$tool_file")" = smbstackenv.sh ] && continue
-        base_name="$(basename "$tool_file")"
-        if cp -f "$tool_file" "$smbstack_tools/$base_name" \
-            && chmod +x "$smbstack_tools/$base_name"; then
-            info "updated $base_name"
-        else
-            warn "cannot update $base_name -alert"
-            update_failed=1
-            update_failures+=("cannot update $base_name")
-        fi
+    for file in smbload.sh smbbk.sh smbreport.sh smbwatch.sh smbstackenv.sh; do
+        mode=755
+        [ "$file" != smbstackenv.sh ] || mode=644
+        update_file "$tools_dir/$file" "$smbstack_tools/$file" "$mode" root:root
     done
-
-    mkdir -p "$smbstack_www/.size_cache"
-    if ! chown www-data:www-data "$smbstack_www/.size_cache"; then
-        warn "cannot set owner and group on .size_cache -alert"
-        update_failed=1
-        update_failures+=("cannot set owner and group on .size_cache")
-    fi
-    if ! chmod 700 "$smbstack_www/.size_cache"; then
-        warn "cannot set permissions on .size_cache -alert"
-        update_failed=1
-        update_failures+=("cannot set permissions on .size_cache")
-    fi
-
-    if ! install_project_logrotate; then
-        warn "cannot configure smbstack log rotation -alert"
-        update_failed=1
-        update_failures+=("cannot configure smbstack log rotation")
-    fi
-
-    local cron_failed=0
-    # cron: rewrite the project's own entries, so an install from an earlier
-    # version picks up any change to a schedule or a command
-    cron_d_set "$SHARED_PATH/.recycle/" "@weekly root find \"$SHARED_PATH/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1" || cron_failed=1
-    cron_d_set "/var/www/smbstack/.size_cache" "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1" || cron_failed=1
-    cron_d_set "$smbstack_tools/smbload.sh" "*/5 * * * * root $smbstack_tools/smbload.sh" || cron_failed=1
-
-    # these two own their own schedule, so each one writes its own line
-    for cron_tool in smbbk.sh smbreport.sh; do
-        if [ -x "$smbstack_tools/$cron_tool" ]; then
-            "$smbstack_tools/$cron_tool" --install || warn "$cron_tool: scheduled task setup failed -alert"
-        fi
+    update_target "$smbstack_www/.size_cache" d700 www-data:www-data
+    update_target /var/log/smbstack.log 640 root:adm
+    update_target /etc/logrotate.d/smbstack
+    update_target "$update_cron_file"
+    update_target "${update_cron_file}.lock" 600
+    update_preflight
+    update_backup "$smbstack_tools/smbbk.sh"
+    update_begin
+    update_stop_daemon "$smbstack_tools/smbwatch.sh"
+    update_stop_service apache2
+    update_wait_jobs
+    update_apply
+    local deploy_file escaped_user
+    escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
+    for deploy_file in smbapi.php smbaudit.html smbaudit-diagnostic.php smbshared.php; do
+        sed -i "s|your_user|$escaped_user|g; s|compartida|$SHARED_NAME|g" "$smbstack_web/$deploy_file" \
+            || update_error "cannot configure file: $smbstack_web/$deploy_file"
     done
-    if [ "$cron_failed" -eq 0 ]; then
-        info "updated cron entries"
-    else
-        warn "cannot update smbstack cron -alert"
-        update_failed=1
-        update_failures+=("cannot update smbstack cron")
-    fi
-
-    systemctl daemon-reload
-    if ! systemctl restart smbd winbind rsyslog apache2; then
-        warn "restart smbd winbind rsyslog apache2 failed -alert"
-        update_failed=1
-        update_failures+=("restart smbd winbind rsyslog apache2 failed")
-    fi
-
-    if [ "$update_failed" -ne 0 ]; then
-        for update_failure in "${update_failures[@]}"; do
-            err "$update_failure -abort"
-        done
-        return 1
-    fi
-
+    install_project_logrotate || update_error "cannot configure smbstack log rotation"
+    register_project_cron "$SHARED_PATH" || update_error "cannot regenerate smbstack cron"
+    update_finish
+    info "smbstack updated"
 }
 
 # ------------------------------------------------------------------------------
@@ -1032,7 +1353,7 @@ do_uninstall() {
     [ -f /lib/systemd/system/smbd.service.bak ] && cp -f /lib/systemd/system/smbd.service.bak /lib/systemd/system/smbd.service
 
     # cron entries
-    rm -f /etc/cron.d/smbstack
+    rm -f /etc/cron.d/smbstack /etc/cron.d/smbstack.update-disabled
 
     # samba packages
     DEBIAN_FRONTEND=noninteractive apt-get remove -y samba samba-common samba-common-bin smbclient winbind cifs-utils
@@ -1115,9 +1436,20 @@ show_menu() {
     done
 }
 
+# ------------------------------------------------------------------------------
+# ENV
+# ------------------------------------------------------------------------------
+
+# LOAD_CONF
+# Load the shared configuration reader
+source "$tools_dir/smbstackenv.sh"
+env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME'
+
+# ------------------------------------------------------------------------------
 # ACTIONS
+# ------------------------------------------------------------------------------
 # Run the action given on the command line, or fall back to the menu
-log "smbsetup start..."
+log "EVENT: smbsetup start..."
 
 case "${1:-}" in
     --install) do_install ;;
@@ -1126,9 +1458,10 @@ case "${1:-}" in
     --status) do_status ;;
     "") show_menu ;;
     *)
+        err "invalid option -abort"
         echo "Usage: $(basename "$0") [--install|--update|--uninstall|--status]"
         exit 1
         ;;
 esac
 
-log "smbsetup done at: $(date '+%Y-%m-%d %H:%M:%S')"
+log "EVENT: smbsetup done"

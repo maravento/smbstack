@@ -195,7 +195,28 @@ sudo bash smbsetup.sh
 
 ---
 
+### Update checks
+
+| Step | Description | Descripción |
+|---|---|---|
+| Before copying | The installer checks all required source files and destinations, write access, available space, immutable attributes and relevant locks. | El instalador comprueba todos los orígenes y destinos, escritura, espacio disponible, atributos inmutables y bloqueos relevantes. |
+| Backup | The installer invokes `smbbk.sh`. If `smbbk.sh` fails, the installer aborts before pausing consumers or replacing files, without writing `done`. | El instalador invoca `smbbk.sh`. Si `smbbk.sh` falla, el instalador aborta antes de pausar procesos o reemplazar archivos, sin escribir `done`. |
+| Pause | The installer pauses its cron file and stops affected services and daemons. It verifies they have stopped and waits for running jobs before replacing files. If a pause fails before any replacement, the installer attempts to resume the previous consumers and schedule. | El instalador pausa su archivo cron y detiene los servicios y demonios afectados. Comprueba su detención y espera que terminen las tareas en ejecución antes de reemplazar archivos. Si falla una pausa antes de reemplazar archivos, el instalador intenta reanudar los procesos y la programación anteriores. |
+| Copy | The installer repeats the checks immediately before copying. It verifies every replacement and its file contents. If a replacement fails, it aborts without `done`; it does not resume the consumers or restore the backup. The paused schedule remains at `/etc/cron.d/smbstack.update-disabled`. | El instalador repite las comprobaciones inmediatamente antes de copiar. Comprueba cada reemplazo y el contenido copiado. Si falla un reemplazo, aborta sin `done`; no reanuda los procesos ni restaura el respaldo. La programación pausada permanece en `/etc/cron.d/smbstack.update-disabled`. |
+| Finish | The installer regenerates its complete cron file and resumes the consumers that were active. It writes `done` only after successful completion. | El instalador regenera su archivo cron completo y reanuda los procesos que estaban activos. Escribe `done` únicamente si termina correctamente. |
+
 ### Installer behavior
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      When several interfaces are available, select the LAN interface from the list. Installation aborts with <code>ERROR: ... -abort</code> if the selected LAN has no configured IPv4 address. Select an address when several exist. The network and mask come from that address and its actual prefix. These installers do not configure network interfaces. Explicit interface/address values supplied by a parent installer reuse its selection.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Si existen varias interfaces, selecciona LAN desde la lista. La instalación aborta con <code>ERROR: ... -abort</code> si LAN no tiene IPv4 configurada. Selecciona una dirección cuando existan varias. La red y máscara proceden de esa dirección y su prefijo real. Estos instaladores no configuran interfaces. Los valores explícitos enviados por otro instalador reutilizan su selección.
+    </td>
+  </tr>
+</table>
 
 <table width="100%">
   <tr>
@@ -259,9 +280,16 @@ sudo bash smbsetup.sh
 
 ### Status
 
-| Description | Descripción |
-|---|---|
-| Shows the status of the `smbd` and `winbind` services, the status of Apache port `3092`, the last five audit log entries and a `testparm` summary. | Muestra el estado de los servicios `smbd` y `winbind`, el estado del puerto `3092` de Apache, las últimas cinco entradas del registro de auditoría y un resumen de `testparm`. |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      Shows the status of the <code>smbd</code> and <code>winbind</code> services, the status of Apache port <code>3092</code>, the last five audit log entries and a <code>testparm</code> summary.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Muestra el estado de los servicios <code>smbd</code> y <code>winbind</code>, el estado del puerto <code>3092</code> de Apache, las últimas cinco entradas del registro de auditoría y un resumen de <code>testparm</code>.
+    </td>
+  </tr>
+</table>
 
 ```bash
 sudo bash smbsetup.sh --status
@@ -300,13 +328,21 @@ sudo bash smbsetup.sh --status
 | Web vhost (audit + shared) | `/etc/apache2/sites-available/smbweb.conf` |
 | Log rotation (Samba logs) | `/etc/logrotate.d/samba` |
 | Log rotation (`smbwatch.sh`) | `/etc/logrotate.d/smbwatch` |
+| Log rotation (Apache logs, set to `rotate 7`) | `/etc/logrotate.d/apache2` |
 | Install config | `/etc/smbstack/smbstack.env` |
 
 #### smbstack.env keys
 
-| Description | Descripción |
-|---|---|
-| `smbsetup.sh` writes the nine keys below during **install** and never overwrites the file on **update**. `smbwatch.sh --install` adds two more of its own, `WATCH_LIMIT_GB` and `WATCH_EXCLUDE`; see the smbwatch section. | `smbsetup.sh` escribe las nueve claves de abajo durante **install** y no sobrescribe el archivo en **update**. `smbwatch.sh --install` añade dos propias, `WATCH_LIMIT_GB` y `WATCH_EXCLUDE`; ver la sección de smbwatch. |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <code>smbsetup.sh</code> writes the nine keys below during <strong>install</strong> and never overwrites the file on <strong>update</strong>. <code>smbwatch.sh --install</code> adds two more of its own, <code>WATCH_LIMIT_GB</code> and <code>WATCH_EXCLUDE</code>; see the smbwatch section.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <code>smbsetup.sh</code> escribe las nueve claves de abajo durante <strong>install</strong> y no sobrescribe el archivo en <strong>update</strong>. <code>smbwatch.sh --install</code> añade dos propias, <code>WATCH_LIMIT_GB</code> y <code>WATCH_EXCLUDE</code>; ver la sección de smbwatch.
+    </td>
+  </tr>
+</table>
 
 | Variable | Read by | Description | Descripción |
 |----------|---------|--------------|-------------|
@@ -351,9 +387,16 @@ sudo pdbedit -L
 
 #### Recycle bin channels
 
-| Description | Descripción |
-|---|---|
-| SMBstack uses three independent channels to write to the recycle bin, each running under a different system context: | SMBstack utiliza tres canales independientes para escribir en la papelera de reciclaje, cada uno ejecutándose bajo un contexto de sistema diferente: |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      SMBstack uses three independent channels to write to the recycle bin, each running under a different system context:
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      SMBstack utiliza tres canales independientes para escribir en la papelera de reciclaje, cada uno ejecutándose bajo un contexto de sistema diferente:
+    </td>
+  </tr>
+</table>
 
 | Path | Written by | Purpose | Propósito |
 |---|---|---|---|
@@ -392,9 +435,16 @@ sudo pdbedit -L
 
 #### Recycle timestamp
 
-| Description | Descripción |
-|---|---|
-| The weekly cleanup deletes items based on their modification date. Each channel therefore updates that date when moving an item to the recycle bin. Otherwise, an old file could be deleted during the next cleanup even though it had only just been recycled.<br><br>Each channel updates the item's modification date with the current date when moving it to the bin: | La limpieza semanal elimina elementos según su fecha de modificación. Por eso, al mover un archivo a la papelera, cada canal actualiza esa fecha. Si se conservara la fecha original, un archivo antiguo podría eliminarse en la siguiente limpieza aunque acabara de reciclarse.<br><br>Cada canal actualiza la fecha de modificación del elemento con la fecha actual al moverlo a la papelera: |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      The weekly cleanup deletes items based on their modification date. Each channel therefore updates that date when moving an item to the recycle bin. Otherwise, an old file could be deleted during the next cleanup even though it had only just been recycled.<br><br>Each channel updates the item's modification date with the current date when moving it to the bin:
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      La limpieza semanal elimina elementos según su fecha de modificación. Por eso, al mover un archivo a la papelera, cada canal actualiza esa fecha. Si se conservara la fecha original, un archivo antiguo podría eliminarse en la siguiente limpieza aunque acabara de reciclarse.<br><br>Cada canal actualiza la fecha de modificación del elemento con la fecha actual al moverlo a la papelera:
+    </td>
+  </tr>
+</table>
 
 | Channel | Stamped by |
 |---------|------------|
@@ -408,9 +458,16 @@ sudo pdbedit -L
 
 #### File versioning
 
-| Description | Descripción |
-|---|---|
-| When `recycle:versions = yes` is active, deleting a file that already exists in the recycle bin does not overwrite it. The new copy is kept alongside the original with the `Copy #N of` prefix: | Cuando `recycle:versions = yes` está activo, eliminar un archivo que ya existe en la papelera no lo sobrescribe. La nueva copia se conserva junto a la original con el prefijo `Copy #N of`: |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      When <code>recycle:versions = yes</code> is active, deleting a file that already exists in the recycle bin does not overwrite it. The new copy is kept alongside the original with the <code>Copy #N of</code> prefix:
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Cuando <code>recycle:versions = yes</code> está activo, eliminar un archivo que ya existe en la papelera no lo sobrescribe. La nueva copia se conserva junto a la original con el prefijo <code>Copy #N of</code>:
+    </td>
+  </tr>
+</table>
 
 ```
 .recycle/smbguest/DOCUMENTS/
@@ -418,9 +475,16 @@ sudo pdbedit -L
 └── Copy #1 of report.docx  ← second deletion of the same file
 ```
 
-| Description | Descripción |
-|---|---|
-| To exclude specific file types from versioning, use `recycle:noversions`. These types are still recycled, but repeated deletions **overwrite** the previous copy in the bin rather than creating a numbered duplicate: | Para excluir tipos de archivo del versionado, usa `recycle:noversions`. Estos archivos siguen yendo a la papelera, pero eliminaciones repetidas **sobreescriben** la copia anterior en lugar de crear una nueva numerada: |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      To exclude specific file types from versioning, use <code>recycle:noversions</code>. These types are still recycled, but repeated deletions <strong>overwrite</strong> the previous copy in the bin rather than creating a numbered duplicate:
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Para excluir tipos de archivo del versionado, usa <code>recycle:noversions</code>. Estos archivos siguen yendo a la papelera, pero eliminaciones repetidas <strong>sobreescriben</strong> la copia anterior en lugar de crear una nueva numerada:
+    </td>
+  </tr>
+</table>
 
 ```ini
 # All files keep multiple versions:
@@ -622,9 +686,16 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 
 #### Monitored folder list
 
-| Description | Descripción |
-|---|---|
-| The list of monitored folders is built once, when `smbwatch` starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel cannot create them at the root of the shared folder.<br><br>After adding a folder, restart `smbwatch` (`--stop` and then `--start`) so that it is included in the monitoring. | La lista de carpetas monitoreadas se genera una sola vez al iniciar `smbwatch`. Las carpetas de primer nivel solo pueden ser creadas por el administrador desde el shell del servidor, ya que los clientes SMB y el panel web no pueden crearlas en la raíz de la carpeta compartida.<br><br>Después de agregar una carpeta, reinicia `smbwatch` (`--stop` y luego `--start`) para que quede incluida en el monitoreo. |
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      The list of monitored folders is built once, when <code>smbwatch</code> starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel cannot create them at the root of the shared folder.<br><br>After adding a folder, restart <code>smbwatch</code> (<code>--stop</code> and then <code>--start</code>) so that it is included in the monitoring.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      La lista de carpetas monitoreadas se genera una sola vez al iniciar <code>smbwatch</code>. Las carpetas de primer nivel solo pueden ser creadas por el administrador desde el shell del servidor, ya que los clientes SMB y el panel web no pueden crearlas en la raíz de la carpeta compartida.<br><br>Después de agregar una carpeta, reinicia <code>smbwatch</code> (<code>--stop</code> y luego <code>--start</code>) para que quede incluida en el monitoreo.
+    </td>
+  </tr>
+</table>
 
 > `install` registers the reboot entry; `uninstall` removes it. `stop` stops the current watcher. `smbload.sh` can restart it during its next check.
 >
@@ -797,6 +868,7 @@ EOF
         <li>May include third-party components.</li>
         <li>Does not accept Pull Requests. Changes must be proposed via Issues.</li>
         <li>This project does not support backward compatibility. New versions may require configuration changes or reinstallation.</li>
+        <li>Adding custom tasks to the project's cron file is not recommended because each installation or update rewrites it.</li>
       </ul>
     </td>
     <td style="width: 50%; vertical-align: top;">
@@ -805,6 +877,7 @@ EOF
         <li>Puede incluir componentes de terceros.</li>
         <li>No acepta Pull Requests. Los cambios deben proponerse mediante Issues.</li>
         <li>Este proyecto no soporta retrocompatibilidad. Las nuevas versiones pueden requerir cambios de configuración o una reinstalación.</li>
+        <li>No se recomienda programar tareas propias en el cron del proyecto, ya que se reescribe en cada instalación o actualización.</li>
       </ul>
     </td>
   </tr>

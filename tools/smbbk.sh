@@ -79,34 +79,41 @@ trap 'rm -f "$tmp_users_file"' EXIT
 # ------------------------------------------------------------------------------
 
 # CRON_D
-# Add or replace one line in the project's single cron.d file
-cron_d_set() {
+# Replace one task; retain other project tasks and serialize writers.
+cron_d_set() (
     local match="$1" line="$2"
     local cron_file="/etc/cron.d/smbstack"
-    local cron_tmp
+    local cron_tmp cron_status
 
-    cron_tmp=$(mktemp) || return 1
+    [ -n "$match" ] || return 1
+    [ ! -L "$cron_file" ] || return 1
+    [ ! -e "$cron_file" ] || [ -f "$cron_file" ] || return 1
+    [ ! -L "${cron_file}.lock" ] || return 1
+    (umask 077; : >> "${cron_file}.lock") || return 1
+    exec 201>"${cron_file}.lock" || return 1
+    flock -x 201 || return 1
+    if [ -e "${cron_file}.update-disabled" ] && [ "${UPDATE_CRON_OWNER:-}" != "$$" ]; then
+        return 1
+    fi
+
+    cron_tmp=$(mktemp "${cron_file}.XXXXXX") || return 1
+    trap 'rm -f -- "$cron_tmp"' EXIT
     if [ -f "$cron_file" ]; then
-        grep -vF "$match" "$cron_file" > "$cron_tmp" || {
-            [ "$?" -eq 1 ] || { rm -f "$cron_tmp"; return 1; }
+        grep -vF -- "$match" "$cron_file" > "$cron_tmp" || {
+            cron_status=$?
+            [ "$cron_status" -eq 1 ] || return 1
         }
     fi
     if [ -n "$line" ]; then
-        printf '%s\n' "$line" >> "$cron_tmp" || {
-            rm -f "$cron_tmp"
-            return 1
-        }
+        printf '%s\n' "$line" >> "$cron_tmp" || return 1
     fi
     if [ -s "$cron_tmp" ]; then
-        if ! install -m 644 -o root -g root "$cron_tmp" "$cron_file"; then
-            rm -f "$cron_tmp"
-            return 1
-        fi
+        chmod 644 "$cron_tmp" && chown root:root "$cron_tmp" || return 1
+        mv -fT -- "$cron_tmp" "$cron_file" || return 1
     else
-        rm -f "$cron_file"
+        rm -f -- "$cron_file" || return 1
     fi
-    rm -f "$cron_tmp"
-}
+)
 
 # Monthly is the floor, not a recommendation: it exists so an untouched
 # system still has a recent copy. Run it by hand before any change.
@@ -125,34 +132,36 @@ register_cron() {
         log "INFO: deployed to $installed_path"
     fi
 
-    cron_d_set "$installed_path" "@monthly root $installed_path"
+    cron_d_set "$installed_path" "@monthly root $installed_path" || { log "ERROR: cannot write project cron -abort"; return 1; }
     log "INFO: smbbk backup cron registered, runs @monthly"
 }
 
 deregister_cron() {
-    cron_d_set "$installed_path" ""
+    cron_d_set "$installed_path" "" || { log "ERROR: cannot write project cron -abort"; return 1; }
     log "INFO: smbbk backup cron removed, archives kept"
 }
 
 # Start
 case "${1:-}" in
     --install)
-        log "smbbk start..."
-        register_cron
-        log "smbbk done at: $(date '+%Y-%m-%d %H:%M:%S')"
+        log "EVENT: smbbk start..."
+        register_cron || exit 1
+        log "EVENT: smbbk done"
         exit 0
         ;;
     --uninstall)
-        log "smbbk start..."
-        deregister_cron
-        log "smbbk done at: $(date '+%Y-%m-%d %H:%M:%S')"
+        log "EVENT: smbbk start..."
+        deregister_cron || exit 1
+        log "EVENT: smbbk done"
         exit 0
         ;;
     "")
-        log "smbbk start..."
+        log "EVENT: smbbk start..."
         ;;
     *)
-        log "ERROR: '$1' invalid; --install/--uninstall or none -abort"
+        log "ERROR: invalid option -abort"
+        echo "Usage: $(basename "$0") [--install|--uninstall]"
+        echo "Without arguments: create a backup"
         exit 1
         ;;
 esac
@@ -226,7 +235,7 @@ backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
 # ------------------------------------------------------------------------------
 
 if ! install -d -m 700 -o root -g root "$backup_dir"; then
-    log "ERROR: cannot create $backup_dir -abort"
+    log "ERROR: cannot create BACKUP_DIR from $(basename "$smbstack_env") -abort"
     exit 1
 fi
 
@@ -303,4 +312,4 @@ fi
 # END
 # ------------------------------------------------------------------------------
 
-log "smbbk done at: $(date '+%Y-%m-%d %H:%M:%S')"
+log "EVENT: smbbk done"
