@@ -93,7 +93,7 @@ info "using local user: $local_user"
 
 # dependencies
 for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep; do
-    if ! dpkg -s "$dep_pkg" &>/dev/null; then
+    if [[ "$(dpkg-query -W -f='${Status}' "$dep_pkg" 2>/dev/null)" != *"ok installed"* ]]; then
         abort "'$dep_pkg' is not installed -abort"
     fi
 done
@@ -523,7 +523,7 @@ check_conflicts() {
 # port in use
 check_port() {
     local proto="$1" port="$2" role="$3"
-    if [ -n "$(ss -lnH "-${proto,,}" "sport = :$port" 2>/dev/null)" ]; then
+    if [ -n "$(ss -lnH "--${proto,,}" "sport = :$port" 2>/dev/null)" ]; then
         err "${proto^^} port $port in use by another $role"
         abort "stop that service before installing -abort"
     fi
@@ -707,28 +707,44 @@ select_shared_folder() {
     echo ""
 }
 
+# IFACES
+# List network interfaces other than loopback
+list_ifaces() {
+    ip -br link show 2>/dev/null | awk '$1 != "lo" {sub(/@.*/, "", $1); printf "%s %s\n", $1, ($2 == "UP") ? "UP" : "DOWN"}'
+}
+
+# IPV4 INTERFACES
+# Offer only interfaces with an active link and configured global IPv4
+list_ipv4_ifaces() {
+    local iface state
+    while read -r iface state; do
+        [ "$state" = UP ] || continue
+        if ip -4 -o addr show dev "$iface" scope global 2>/dev/null \
+            | awk '$4 != "" {found=1} END {exit !found}'; then
+            printf '%s\n' "$iface"
+        fi
+    done < <(list_ifaces)
+}
+
 # LAN SELECTION
 # Select an existing interface and one of its configured IPv4 addresses
 choose_lan_interface() {
-    local preset_iface="${1:-}" excluded_iface="${2:-}"
-    local iface_name iface_choice iface_index iface_addrs
+    local preset_iface="${1:-}"
+    local iface_name iface_choice iface_index iface_addrs iface_state
     local -a lan_candidates=()
-    if [ -n "$preset_iface" ]; then
-        ip link show dev "$preset_iface" >/dev/null 2>&1 || {
-            log "ERROR: LAN interface '$preset_iface' not found -abort"
-            exit 1
-        }
-        [ "$preset_iface" != "$excluded_iface" ] || {
-            log "ERROR: LAN and WAN must differ -abort"
-            exit 1
-        }
-        lan_iface_answer="$preset_iface"
-        return 0
-    fi
     while IFS= read -r iface_name; do
-        [ "$iface_name" = "$excluded_iface" ] && continue
         lan_candidates+=("$iface_name")
-    done < <(ip -br link show | awk '$1 != "lo" {sub(/@.*/, "", $1); print $1}')
+    done < <(list_ipv4_ifaces)
+    if [ -n "$preset_iface" ]; then
+        for iface_name in "${lan_candidates[@]}"; do
+            if [ "$preset_iface" = "$iface_name" ]; then
+                lan_iface_answer="$preset_iface"
+                return 0
+            fi
+        done
+        log "ERROR: LAN must be an active interface with IPv4 -abort"
+        exit 1
+    fi
     (( ${#lan_candidates[@]} > 0 )) || {
         log "ERROR: no LAN interface available -abort"
         exit 1
@@ -740,11 +756,12 @@ choose_lan_interface() {
     echo "Available LAN interfaces:"
     for iface_index in "${!lan_candidates[@]}"; do
         iface_name="${lan_candidates[$iface_index]}"
+        iface_state=$(ip -br link show "$iface_name" | awk '{print $2}')
         iface_addrs=$(ip -4 -o addr show dev "$iface_name" scope global | awk '{print $4}' | paste -sd' ')
-        printf ' [%d] %s (%s)\n' "$((iface_index + 1))" "$iface_name" "${iface_addrs:-no IPv4}"
+        printf ' [%d] %s (%s, %s)\n' "$((iface_index + 1))" "$iface_name" "$iface_state" "${iface_addrs:-no IPv4}"
     done
     while true; do
-        read -r -p "Select LAN interface number: " iface_choice || {
+        read -r -p "Select LAN Interface [1-${#lan_candidates[@]}]: " iface_choice || {
             log "ERROR: cannot read LAN interface selection -abort"
             exit 1
         }
@@ -1118,8 +1135,7 @@ EOF
 
     systemctl daemon-reload
 
-    # detect server IP from SMB_IFACE
-    detected_ip=$(ip -4 addr show "$iface_answer" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
+    detected_ip="${lan_cidr_answer%/*}"
     if ! [[ "$detected_ip" =~ $UH_IPV4 ]]; then
         err "no IPv4 address on $iface_answer"
         abort "check the interface and run again -abort"
@@ -1132,6 +1148,25 @@ EOF
     # reachable from the LAN.
     echo "Listen 127.0.0.1:3092" >> /etc/apache2/ports.conf
     info "Port 3092 bound to 127.0.0.1"
+
+    for apache_php_ini in /etc/php/*/apache2/php.ini; do
+        [ -f "$apache_php_ini" ] || continue
+        if ! { [ -f "${apache_php_ini}.bak" ] || cp -p "$apache_php_ini" "${apache_php_ini}.bak"; }; then
+            echo "ERROR: cannot back up $apache_php_ini -abort" >&2
+            exit 1
+        fi
+        if grep -Eq '^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=' "$apache_php_ini"; then
+            sed -i 's/^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=.*/session.upload_progress.enabled = 0/' "$apache_php_ini" || {
+                echo "ERROR: cannot edit $apache_php_ini -abort" >&2
+                exit 1
+            }
+        else
+            printf '\nsession.upload_progress.enabled = 0\n' >> "$apache_php_ini" || {
+                echo "ERROR: cannot edit $apache_php_ini -abort" >&2
+                exit 1
+            }
+        fi
+    done
 
     if ! systemctl restart smbd winbind rsyslog apache2; then
         abort "restart smbd winbind rsyslog apache2 failed -abort"
@@ -1407,10 +1442,9 @@ do_status() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN
+# MENU
 # ------------------------------------------------------------------------------
 
-# MENU
 # Interactive menu shown when the script runs without arguments
 show_menu() {
     while true; do
@@ -1448,6 +1482,7 @@ env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME'
 # ------------------------------------------------------------------------------
 # ACTIONS
 # ------------------------------------------------------------------------------
+
 # Run the action given on the command line, or fall back to the menu
 log "EVENT: smbsetup start..."
 

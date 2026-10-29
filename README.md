@@ -34,6 +34,8 @@ FILE: README.md
 
 ---
 
+### Compatibility
+
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
@@ -44,6 +46,8 @@ FILE: README.md
     </td>
   </tr>
 </table>
+
+### Software
 
 - Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
 - `rsyslog`, `logrotate`
@@ -210,10 +214,10 @@ sudo bash smbsetup.sh
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      When several interfaces are available, select the LAN interface from the list. Installation aborts with <code>ERROR: ... -abort</code> if the selected LAN has no configured IPv4 address. Select an address when several exist. The network and mask come from that address and its actual prefix. These installers do not configure network interfaces. Explicit interface/address values supplied by a parent installer reuse its selection.
+      Only interfaces with an UP link and global IPv4 are candidates. With none, abort; with one, select LAN automatically; with several, ask for LAN and omit the others. A caller can provide <code>SMBSTACK_IFACE</code>; validate it against the candidates and reuse it without asking for the interface. With several LAN IPv4 addresses, ask which to use, including when the interface was supplied by a caller. Save the selected address in <code>SERVER_IP</code>. Derive the network and mask from the selected address and its actual prefix. The installer does not configure network interfaces.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      Si existen varias interfaces, selecciona LAN desde la lista. La instalación aborta con <code>ERROR: ... -abort</code> si LAN no tiene IPv4 configurada. Selecciona una dirección cuando existan varias. La red y máscara proceden de esa dirección y su prefijo real. Estos instaladores no configuran interfaces. Los valores explícitos enviados por otro instalador reutilizan su selección.
+      Solo son candidatas las interfaces con enlace UP e IPv4 global. Sin candidatas, aborta; con una, selecciona LAN automáticamente; con varias, pregunta LAN y omite las demás. Otro instalador puede proporcionar <code>SMBSTACK_IFACE</code>; se valida contra las candidatas y se reutiliza sin preguntar la interfaz. Con varias IPv4 en LAN, pregunta cuál utilizar, incluso si otro instalador proporcionó la interfaz. Guarda la dirección elegida en <code>SERVER_IP</code>. Calcula red y máscara desde la dirección seleccionada y su prefijo real. El instalador no configura las interfaces de red.
     </td>
   </tr>
 </table>
