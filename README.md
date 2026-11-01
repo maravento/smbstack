@@ -51,7 +51,7 @@ FILE: README.md
 
 - Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
 - `rsyslog`, `logrotate`
-- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip` (checked by `smbsetup.sh`)
+- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip`, `python3` (checked by `smbsetup.sh`)
 - `inotify-tools`, `procps`, `coreutils`, `findutils`, `cron`, `util-linux`, `sed`, `grep` (checked by `tools/smbwatch.sh`)
 - `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd` (checked by `tools/smbload.sh`)
 - `zip`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbbk.sh`)
@@ -60,7 +60,7 @@ FILE: README.md
 ```bash
 apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
     acl openssl cron iproute2 sudo systemd util-linux sed grep inotify-tools \
-    procps coreutils findutils zip
+    procps coreutils findutils zip python3
 ```
 
 The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbsetup.sh` itself.
@@ -200,6 +200,13 @@ sudo bash smbsetup.sh
 ---
 
 ### Update checks
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">Update checks Apache port <code>3092</code> and adds a missing <code>Listen</code>. It aligns the installed VirtualHost port and validates Apache before resuming services.</td>
+    <td style="width: 50%; vertical-align: top;">La actualización comprueba el puerto <code>3092</code> de Apache y añade el <code>Listen</code> ausente. Ajusta el puerto del VirtualHost instalado y valida Apache antes de reanudar los servicios.</td>
+  </tr>
+</table>
 
 | Step | Description | Descripción |
 |---|---|---|

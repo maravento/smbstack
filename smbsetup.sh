@@ -522,8 +522,28 @@ check_conflicts() {
 
 # port in use
 check_port() {
-    local proto="$1" port="$2" role="$3"
-    if [ -n "$(ss -lnH "--${proto,,}" "sport = :$port" 2>/dev/null)" ]; then
+    local proto="$1" port="$2" role="$3" port_listeners
+    if ! port_listeners=$(python3 - "${proto,,}" "$port" <<'PY'
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(
+        ["ss", "-lnH", f"--{sys.argv[1]}", f"sport = :{sys.argv[2]}"],
+        capture_output=True,
+        text=True,
+    )
+except OSError:
+    sys.exit(1)
+if result.returncode != 0 or result.stderr.strip():
+    sys.exit(1)
+sys.stdout.write(result.stdout)
+PY
+    ); then
+        err "cannot check ${proto^^} port $port"
+        abort "fix the ss query before installing -abort"
+    fi
+    if [ -n "$port_listeners" ]; then
         err "${proto^^} port $port in use by another $role"
         abort "stop that service before installing -abort"
     fi
@@ -1280,6 +1300,20 @@ ENV
 # UPDATE
 # ------------------------------------------------------------------------------
 
+update_apache_port() {
+    local ports_file="$1" site_file="$2" bind_ip="$3" port="$4" status
+    sed -i -E "s/^([[:space:]]*<VirtualHost[[:space:]]+)[^>]+>/\1*:${port}>/" "$site_file" \
+        || update_error "cannot configure Apache site port"
+    if grep -Eq "^[[:space:]]*Listen[[:space:]]+([^[:space:]]*:)?${port}([[:space:]]|$)" "$ports_file"; then
+        return 0
+    else
+        status=$?
+        [ "$status" -eq 1 ] || update_error "cannot read Apache ports.conf"
+    fi
+    printf 'Listen %s:%s\n' "$bind_ip" "$port" >> "$ports_file" \
+        || update_error "cannot write Apache ports.conf"
+}
+
 do_update() {
     [ -f "$smbstack_env" ] || abort "smbstack is not installed -abort"
     load_smbstack_env "$smbstack_env" "$env_keys" || abort "cannot read smbstack.env -abort"
@@ -1298,6 +1332,12 @@ do_update() {
     update_target /etc/logrotate.d/smbstack
     update_target "$update_cron_file"
     update_target "${update_cron_file}.lock" 600
+    [ -f /etc/apache2/ports.conf ] && [ ! -L /etc/apache2/ports.conf ] \
+        || update_error "ports.conf is missing or invalid"
+    [ -f /etc/apache2/sites-available/smbweb.conf ] && [ ! -L /etc/apache2/sites-available/smbweb.conf ] \
+        || update_error "Apache site is missing or invalid"
+    update_target /etc/apache2/ports.conf
+    update_target /etc/apache2/sites-available/smbweb.conf
     update_preflight
     update_backup "$smbstack_tools/smbbk.sh"
     update_begin
@@ -1305,6 +1345,8 @@ do_update() {
     update_stop_service apache2
     update_wait_jobs
     update_apply
+    update_apache_port /etc/apache2/ports.conf /etc/apache2/sites-available/smbweb.conf 127.0.0.1 3092
+    apache2ctl configtest || update_error "Apache configuration invalid"
     local deploy_file escaped_user
     escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
     for deploy_file in smbapi.php smbaudit.html smbaudit-diagnostic.php smbshared.php; do
@@ -1416,7 +1458,26 @@ do_status() {
     echo ""
     echo "=== Apache Ports ==="
     for probe_port in 3092; do
-        if ss -tlnp | grep -qE ":${probe_port}[[:space:]]"; then
+        local port_listeners
+        if ! port_listeners=$(python3 - tcp "$probe_port" <<'PY'
+import subprocess
+import sys
+
+try:
+    result = subprocess.run(
+        ["ss", "-lnH", f"--{sys.argv[1]}", f"sport = :{sys.argv[2]}"],
+        capture_output=True,
+        text=True,
+    )
+except OSError:
+    sys.exit(1)
+if result.returncode != 0 or result.stderr.strip():
+    sys.exit(1)
+sys.stdout.write(result.stdout)
+PY
+        ); then
+            echo ":$probe_port UNKNOWN"
+        elif [ -n "$port_listeners" ]; then
             echo ":$probe_port OPEN"
         else
             echo ":$probe_port CLOSED"
