@@ -207,13 +207,11 @@ load_smbstack_env "$smbstack_env" "$env_keys" || true
 # KEY CHECK
 # Collect every failure first, then decide -- a single abort reports them all
 key_errors=()
-for env_key in LOCAL_USER BACKUP_DIR; do
+for env_key in LOCAL_USER; do
     if ! grep -q "^${env_key}=" "$smbstack_env"; then
         key_errors+=("$env_key missing line")
     elif [[ -z "${!env_key:-}" ]]; then
         key_errors+=("$env_key not set")
-    elif [ "$env_key" = BACKUP_DIR ] && [[ "$BACKUP_DIR" != /* ]]; then
-        key_errors+=("$env_key invalid absolute path")
     fi
 done
 if (( ${#key_errors[@]} > 0 )); then
@@ -227,7 +225,12 @@ unset key_errors key_error env_key
 
 log "INFO: using local user: $LOCAL_USER"
 
-backup_dir="$BACKUP_DIR"
+backup_dir="/etc/bak/smbstack"
+if [[ "${BACKUP_DIR:-}" != "$backup_dir" ]] \
+   || [[ "$(readlink -m -- "$backup_dir")" != "$backup_dir" ]]; then
+    log "ERROR: BACKUP_DIR must be $backup_dir -abort"
+    exit 1
+fi
 backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
 
 # ------------------------------------------------------------------------------
@@ -287,21 +290,29 @@ fi
 # run can only ever delete its own work. The archive takes its final name once
 # zip has succeeded, which also keeps the retention glob from seeing a partial.
 backup_part="${backup_zip}.part"
-find "$backup_dir" -mindepth 1 -maxdepth 1 ! -name 'smbbk_*.zip' -exec rm -rf {} +
 if (umask 077; zip -r -q -y "$backup_part" "${backup_list[@]}"); then
     chmod 600 "$backup_part"
-    if ! mv -f "$backup_part" "$backup_zip"; then
+    if ! mv -fT -- "$backup_part" "$backup_zip"; then
         rm -f "$backup_part"
         log "ERROR: rename $(basename "$backup_zip"). check chmod -abort"
         exit 1
     fi
     log "INFO: backup written to $(basename "$backup_zip")"
 
+    if [[ "$(readlink -m -- "$backup_dir")" != "$backup_dir" ]]; then
+        log "ERROR: BACKUP_DIR must be $backup_dir -abort"
+        exit 1
+    fi
     # keep only the last 3
+    retention_ok=1
+    find "$backup_dir" -mindepth 1 -maxdepth 1 ! -name 'smbbk_*.zip' -exec rm -rf {} + \
+        || retention_ok=0
     old_backups=("$backup_dir"/smbbk_*.zip)
     if (( ${#old_backups[@]} > 3 )); then
-        printf '%s\0' "${old_backups[@]}" | sort -z | head -z -n -3 | xargs -0 -r rm -f --
+        printf '%s\0' "${old_backups[@]}" | sort -z | head -z -n -3 | xargs -0 -r rm -f -- \
+            || retention_ok=0
     fi
+    (( retention_ok )) || log "WARNING: backup retention incomplete -alert"
 else
     rm -f "$backup_part"
     log "ERROR: $(basename "$backup_zip"). check space/chmod -abort"

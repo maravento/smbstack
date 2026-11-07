@@ -237,7 +237,7 @@ build_report() {
 
     if ! { chown root:www-data "$report_tmp" \
         && chmod 640 "$report_tmp" \
-        && mv -f "$report_tmp" "$report_json"; }; then
+        && mv -fT -- "$report_tmp" "$report_json"; }; then
         log "ERROR: cannot publish report, previous one kept -abort"
         return 1
     fi
@@ -341,7 +341,7 @@ case "${1:-}" in
         exit 0
         ;;
     "")        log "EVENT: smbreport start..."; build_report ;;
-    *)         echo "Usage: $0 [--install|--uninstall]" >&2; exit 1 ;;
+    *)         log "ERROR: invalid option -abort"; echo "Usage: $0 [--install|--uninstall]" >&2; exit 1 ;;
 esac || exit 1
 
 # ------------------------------------------------------------------------------

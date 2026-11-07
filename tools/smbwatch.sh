@@ -8,7 +8,7 @@
 #
 # USAGE:
 # sudo bash smbwatch.sh --install      Ask for the keys and --start the watcher
-# sudo bash smbwatch.sh --uninstall    Remove the cron entry and the keys
+# sudo bash smbwatch.sh --uninstall    Confirm removal of the cron entry and keys
 # sudo bash smbwatch.sh --start        Start the watcher
 # sudo bash smbwatch.sh --stop         Stop the watcher
 # sudo bash smbwatch.sh --status       Report whether the watcher runs
@@ -254,7 +254,7 @@ check_keys() {
         for key_error in "${key_errors[@]}"; do
             log "WARNING: $key_error -alert"
         done
-        log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env") -abort"
+        log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env")"
         log "ERROR: run '$(basename "$0") --install' first -abort"
         exit 1
     fi
@@ -263,6 +263,27 @@ check_keys() {
 # ------------------------------------------------------------------------------
 # INSTALL
 # ------------------------------------------------------------------------------
+
+lock_watch_config() {
+    local config_lock="/var/lock/smbstack-smbwatch-config.lock"
+    if [[ -L "$config_lock" ]] \
+        || ! (umask 077; : >> "$config_lock") \
+        || ! { exec 202>>"$config_lock"; }; then
+        log "ERROR: cannot open SMBwatch config lock -abort"
+        exit 1
+    fi
+    local lock_status=0
+    flock -n -E 75 202 || lock_status=$?
+    if (( lock_status != 0 )); then
+        if [[ "${1:-}" == start && "$lock_status" == 75 ]]; then
+            printf '%s INFO: SMBwatch configuration busy; retry later -retry\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" >&2
+            exit 75
+        fi
+        log "ERROR: cannot acquire SMBwatch config lock -abort"
+        exit 1
+    fi
+}
 
 # The only action that writes a key. It asks the operator, writes both WATCH
 # keys into smbstack.env, registers the @reboot cron entry and then starts the
@@ -276,20 +297,6 @@ install_module() {
         exit 1
     fi
 
-    # first time either key is written: wrap them in a divider block, like
-    # uhm.env does for its own sections
-    watch_header_added=0
-    if ! grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" \
-       && ! grep -q '^WATCH_EXCLUDE=' "$smbstack_env"; then
-        {
-            echo ""
-            echo "# ============================================================================="
-            echo "# SMBWATCH (added by smbwatch.sh --install)"
-            echo "# ============================================================================="
-        } >> "$smbstack_env"
-        watch_header_added=1
-    fi
-
     while true; do
         read -rp "Enter watch limit per folder in GB [10]: " input_limit
         input_limit="${input_limit:-10}"
@@ -298,30 +305,56 @@ install_module() {
            && [ "$input_limit" -ge 1 ] \
            && [ "$input_limit" -le 10000 ]; then
             WATCH_LIMIT_GB="$input_limit"
-            set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
-            log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
             break
         fi
         log "INFO: enter a valid number between 1 and 10000 -retry"
     done
 
-    read -rp "Enter folders to exclude from watch limit (comma-separated, or leave empty): " input_exclude
-    if [ -n "$input_exclude" ]; then
-        WATCH_EXCLUDE="$input_exclude"
+    while true; do
+        if ! read -rp "Enter folders to exclude from watch limit (comma-separated, or leave empty): " input_exclude; then
+            log "ERROR: missing watch exclusions input -abort"
+            exit 1
+        fi
+        if [[ "$input_exclude" == [[:space:]\"\']* || "$input_exclude" == *[[:space:]\"\'] ]]; then
+            log "INFO: enter exclusions without outer quotes or spaces -retry"
+            continue
+        fi
+        WATCH_EXCLUDE="${input_exclude:-NONE}"
+        break
+    done
+
+    (
+        lock_watch_config
+        # first time either key is written: wrap them in a divider block, like
+        # uhm.env does for its own sections
+        watch_header_added=0
+        if ! grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" \
+           && ! grep -q '^WATCH_EXCLUDE=' "$smbstack_env"; then
+            {
+                echo ""
+                echo "# ============================================================================="
+                echo "# SMBWATCH (added by smbwatch.sh --install)"
+                echo "# ============================================================================="
+            } >> "$smbstack_env"
+            watch_header_added=1
+        fi
+
+        set_env_var "WATCH_LIMIT_GB" "$WATCH_LIMIT_GB"
+        log "INFO: watch limit set to ${WATCH_LIMIT_GB} GB"
         set_env_var "WATCH_EXCLUDE" "$WATCH_EXCLUDE"
-        log "INFO: excluded folders: ${WATCH_EXCLUDE}"
-    else
-        WATCH_EXCLUDE="NONE"
-        set_env_var "WATCH_EXCLUDE" "NONE"
-        log "INFO: no folders excluded"
-    fi
+        if [ -n "$input_exclude" ]; then
+            log "INFO: excluded folders: ${WATCH_EXCLUDE}"
+        else
+            log "INFO: no folders excluded"
+        fi
 
-    if [ "$watch_header_added" -eq 1 ]; then
-        echo "# =============================================================================" >> "$smbstack_env"
-    fi
+        if [ "$watch_header_added" -eq 1 ]; then
+            echo "# =============================================================================" >> "$smbstack_env"
+        fi
 
-    cron_d_set "$script_path" "@reboot root $script_path --start" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
-    log "INFO: smbwatch cron registered, runs @reboot"
+        cron_d_set "$script_path" "@reboot root $script_path --start" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
+        log "INFO: smbwatch cron registered, runs @reboot"
+    ) || exit 1
 
     start
 }
@@ -330,22 +363,41 @@ install_module() {
 # UNINSTALL
 # ------------------------------------------------------------------------------
 
-# Stops the watcher, drops the cron entry and removes both WATCH keys, so a
+# Drops the cron entry, stops the watcher and removes both WATCH keys, so a
 # later install starts from a clean state.
-uninstall_module() {
-    stop
+uninstall_module() (
+    lock_watch_config
 
     cron_d_set "$script_path" "" || { log "ERROR: cannot write smbstack cron -abort"; exit 1; }
     log "INFO: smbwatch cron removed (@reboot)"
 
-    sed -i '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d' "$smbstack_env"
-    sed -i '/^# SMBWATCH (added by smbwatch.sh/,+1d' "$smbstack_env"
+    stop
+
+    # Both edits go to a temporary file published with one rename. An empty block
+    # is removed whole; a block with operator lines keeps them.
+    local env_tmp
+    if ! env_tmp=$(mktemp "${smbstack_env}.XXXXXX"); then
+        log "ERROR: cannot update $(basename "$smbstack_env") -abort"
+        exit 1
+    fi
+    if ! { sed '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d' "$smbstack_env" \
+            | sed -z 's/\n\n# =*\n# SMBWATCH (added by smbwatch.sh --install)\n# =*\n# =*\n/\n/' > "$env_tmp" \
+        && chown --reference="$smbstack_env" -- "$env_tmp" \
+        && chmod --reference="$smbstack_env" -- "$env_tmp" \
+        && mv -fT -- "$env_tmp" "$smbstack_env"; }; then
+        rm -f -- "$env_tmp"
+        log "ERROR: cannot update $(basename "$smbstack_env") -abort"
+        exit 1
+    fi
     log "INFO: WATCH keys removed from $(basename "$smbstack_env")"
-}
+)
 
 # START
 # Launch the inotifywait watcher in background and write its pid file
-start() {
+start() (
+    lock_watch_config start
+    load_smbstack_env "$smbstack_env" "$env_keys" || true
+
     # prevent overlapping runs
     script_lock="/var/lock/$(basename "$0" .sh).lock"
     (umask 077; : >> "$script_lock")
@@ -416,20 +468,30 @@ start() {
     # folder would otherwise skip the limit. A directory only ever fires
     # create, and is recognized by the ISDIR flag.
     set -m
-    inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
+    inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 202>&- 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
         case "$event_name" in
             *ISDIR*)      [[ "$event_name" == CREATE* ]] || continue ;;
             CLOSE_WRITE*|MOVED_TO*) ;;
             *)            continue ;;
         esac
         handle_new_file "$new_file"
-    done &
+    done 202>&- &
 
-    echo $! > "$pid_file"
+    local watch_pid=$! attempt process_group
+    for (( attempt=0; attempt<100; attempt++ )); do
+        is_smbwatch_running "$watch_pid" && break
+        sleep 0.02
+    done
+    if ! is_smbwatch_running "$watch_pid" || ! printf '%s\n' "$watch_pid" > "$pid_file"; then
+        process_group=$(ps -o pgid= -p "$watch_pid" 2>/dev/null | tr -d ' ')
+        [[ -z "$process_group" ]] || kill -- "-$process_group" 2>/dev/null || true
+        rm -f -- "$pid_file" "$state_file"
+        log "ERROR: SMBwatch startup failed -abort"
+        exit 1
+    fi
     set +m
-    log "INFO: started with PID $(cat "$pid_file")"
-
-}
+    log "INFO: started with PID $watch_pid"
+)
 
 # STOP
 # Kill the watcher process group and remove its pid file
@@ -483,11 +545,25 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch start..."
 
 case "${1:-}" in
     --install)   install_module ;;
-    --uninstall) uninstall_module ;;
-    --start)     start ;;
+    --uninstall)
+        echo "This removes the SMBwatch cron entry and WATCH keys from smbstack.env."
+        echo "Caution: Do not modify smbstack.env until SMBwatch removal finishes."
+        confirm=""
+        if ! read -r -p "Confirm SMBwatch removal? [y/N]: " confirm && [[ -z "$confirm" ]]; then
+            log "ERROR: SMBwatch removal needs a confirmation -abort"
+            exit 1
+        fi
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo "SMBwatch removal cancelled."
+            echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch done"
+            exit 0
+        fi
+        uninstall_module
+        ;;
+    --start)     start || exit "$?" ;;
     --stop)      stop ;;
     --status)    status ;;
-    *)         log "INFO: Usage: $(basename "$0") {--install|--uninstall|--start|--stop|--status}"; exit 1 ;;
+    *)         log "ERROR: invalid option -abort"; echo "Usage: $(basename "$0") {--install|--uninstall|--start|--stop|--status}"; exit 1 ;;
 esac || exit 1
 
 # ------------------------------------------------------------------------------

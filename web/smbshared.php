@@ -448,7 +448,11 @@ if ($total_size === null) {
     $filtered = new RecursiveCallbackFilterIterator($rdi, function ($current) {
         return $current->getFilename() !== '.recycle';
     });
-    $rit = new RecursiveIteratorIterator($filtered, RecursiveIteratorIterator::LEAVES_ONLY);
+    $rit = new RecursiveIteratorIterator(
+        $filtered,
+        RecursiveIteratorIterator::LEAVES_ONLY,
+        RecursiveIteratorIterator::CATCH_GET_CHILD
+    );
     foreach ($rit as $item) {
         if ($item->isFile()) $total_size += $item->getSize();
     }

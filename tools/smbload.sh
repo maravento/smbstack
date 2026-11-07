@@ -69,9 +69,7 @@ done
 log "EVENT: smbload start..."
 
 # Samba Service (smbd)
-if pgrep -x smbd > /dev/null; then
-    log "INFO: smbd ONLINE"
-else
+if ! pgrep -x smbd > /dev/null; then
     systemctl stop smbd.service &>/dev/null
     if systemctl start smbd.service; then
         log "INFO: smbd restarted -fixed"
@@ -81,9 +79,7 @@ else
 fi
 
 # Samba Service (winbind)
-if pgrep -x winbindd > /dev/null; then
-    log "INFO: winbind ONLINE"
-else
+if ! pgrep -x winbindd > /dev/null; then
     systemctl stop winbind.service &>/dev/null
     if systemctl start winbind.service; then
         log "INFO: winbind restarted -fixed"
@@ -107,17 +103,24 @@ is_smbwatch_running() {
     [ -n "$process_group" ] && pgrep -g "$process_group" -x inotifywait >/dev/null 2>&1
 }
 
-if [ ! -x "$script_dir/smbwatch.sh" ]; then
-    log "WARNING: smbwatch.sh not found or not executable -alert"
-elif [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
-    log "INFO: smbwatch ONLINE"
-else
-    if "$script_dir/smbwatch.sh" --start &>/dev/null; then
-        log "INFO: smbwatch restarted -fixed"
-    else
-        log "WARNING: smbwatch restart FAILED, see smbwatch.log -alert"
+(
+    smbstack_env="/etc/smbstack/smbstack.env"
+    if ! grep -q '^WATCH_LIMIT_GB=' "$smbstack_env" 2>/dev/null &&
+       ! grep -q '^WATCH_EXCLUDE=' "$smbstack_env" 2>/dev/null; then
+        exit 0
     fi
-fi
+    if [ ! -x "$script_dir/smbwatch.sh" ]; then
+        log "WARNING: smbwatch.sh not found or not executable -alert"
+    elif ! { [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; }; then
+        start_status=0
+        "$script_dir/smbwatch.sh" --start &>/dev/null || start_status=$?
+        if (( start_status == 0 )); then
+            log "INFO: smbwatch restarted -fixed"
+        elif (( start_status != 75 )); then
+            log "WARNING: smbwatch restart FAILED, see smbwatch.log -alert"
+        fi
+    fi
+)
 
 # ------------------------------------------------------------------------------
 # END

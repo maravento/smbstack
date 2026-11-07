@@ -1172,19 +1172,12 @@ EOF
     for apache_php_ini in /etc/php/*/apache2/php.ini; do
         [ -f "$apache_php_ini" ] || continue
         if ! { [ -f "${apache_php_ini}.bak" ] || cp -p "$apache_php_ini" "${apache_php_ini}.bak"; }; then
-            echo "ERROR: cannot back up $apache_php_ini -abort" >&2
-            exit 1
+            abort "cannot back up $apache_php_ini -abort"
         fi
         if grep -Eq '^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=' "$apache_php_ini"; then
-            sed -i 's/^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=.*/session.upload_progress.enabled = 0/' "$apache_php_ini" || {
-                echo "ERROR: cannot edit $apache_php_ini -abort" >&2
-                exit 1
-            }
+            sed -i 's/^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=.*/session.upload_progress.enabled = 0/' "$apache_php_ini" || abort "cannot edit $apache_php_ini -abort"
         else
-            printf '\nsession.upload_progress.enabled = 0\n' >> "$apache_php_ini" || {
-                echo "ERROR: cannot edit $apache_php_ini -abort" >&2
-                exit 1
-            }
+            printf '\nsession.upload_progress.enabled = 0\n' >> "$apache_php_ini" || abort "cannot edit $apache_php_ini -abort"
         fi
     done
 
@@ -1265,7 +1258,6 @@ SMBREPORT_TOP_FILES=50
 TRUSTED_PROXIES=$proxy_list
 
 # Backup
-# Changing these defaults is not recommended
 BACKUP_DIR=/etc/bak/smbstack
 # =============================================================================
 ENV
@@ -1364,6 +1356,14 @@ do_update() {
 # ------------------------------------------------------------------------------
 
 do_uninstall() {
+    local config_lock="/var/lock/smbstack-smbwatch-config.lock"
+    if [[ -L "$config_lock" ]] \
+        || ! (umask 077; : >> "$config_lock") \
+        || ! { exec 202>>"$config_lock"; }; then
+        abort "cannot open SMBwatch config lock -abort"
+    fi
+    flock -n 202 || abort "cannot acquire SMBwatch config lock -abort"
+
     if [ -x "$smbstack_tools/smbbk.sh" ]; then
         if "$smbstack_tools/smbbk.sh"; then
             info "backup taken with smbbk.sh"
@@ -1398,8 +1398,8 @@ do_uninstall() {
     # anything else the admin may have added to ports.conf since install.
     rm -f /etc/apache2/ports.conf.bak
 
-    # stop smbwatch and drop its cron entry and keys before removing its files
-    [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" --uninstall 2>/dev/null || true
+    # Stop SMBwatch before removing the project configuration and cron file.
+    [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" --stop 2>/dev/null || true
 
     # smbbk.sh cron entry
     [ -x "$smbstack_tools/smbbk.sh" ] && "$smbstack_tools/smbbk.sh" --uninstall || true
@@ -1431,6 +1431,7 @@ do_uninstall() {
 
     # cron entries
     rm -f /etc/cron.d/smbstack /etc/cron.d/smbstack.update-disabled
+    exec 202>&-
 
     # samba packages
     DEBIAN_FRONTEND=noninteractive apt-get remove -y samba samba-common samba-common-bin smbclient winbind cifs-utils

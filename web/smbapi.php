@@ -57,7 +57,26 @@ class SambaLogReader {
      * Read log files and return parsed records
      */
     public function getLogs($limit = MAX_LINES) {
+        if ($limit <= 0) {
+            return [];
+        }
         $allLogs = [];
+
+        // Sort by timestamp (newest first)
+        $newestFirst = function($a, $b) {
+            $aSeconds = strtotime($a['timestamp']);
+            $bSeconds = strtotime($b['timestamp']);
+            if ($aSeconds === false || $bSeconds === false) {
+                return strcmp($b['timestamp'], $a['timestamp']);
+            }
+            $secondsOrder = $bSeconds <=> $aSeconds;
+            if ($secondsOrder !== 0) return $secondsOrder;
+            preg_match('/\.(\d+)/', $a['timestamp'], $aFraction);
+            preg_match('/\.(\d+)/', $b['timestamp'], $bFraction);
+            $width = max(strlen($aFraction[1]), strlen($bFraction[1]));
+            return strcmp(str_pad($bFraction[1], $width, '0'),
+                          str_pad($aFraction[1], $width, '0'));
+        };
 
         foreach ($this->logFiles as $logFile) {
             if (!file_exists($logFile)) {
@@ -70,25 +89,16 @@ class SambaLogReader {
             }
 
             try {
-                $remaining = $limit - count($allLogs);
-                $fileLogs = $this->readSingleFile($logFile, $remaining);
+                $fileLogs = $this->readSingleFile($logFile, $limit);
                 $allLogs = array_merge($allLogs, $fileLogs);
-
-                // Stop if we have enough logs
-                if (count($allLogs) >= $limit) {
-                    break;
-                }
+                usort($allLogs, $newestFirst);
+                $allLogs = array_slice($allLogs, 0, $limit);
             } catch (Exception $e) {
                 error_log("Error reading $logFile: " . $e->getMessage());
             }
         }
 
-        // Sort by timestamp (newest first)
-        usort($allLogs, function($a, $b) {
-            return strcmp($b['timestamp'], $a['timestamp']);
-        });
-
-        return array_slice($allLogs, 0, $limit);
+        return $allLogs;
     }
 
     /**
@@ -126,6 +136,13 @@ class SambaLogReader {
             $file = new SplFileObject($filename);
             $file->seek(PHP_INT_MAX);
             $totalLines = $file->key();
+            if ($file->getSize() > 0) {
+                $file->fseek(-1, SEEK_END);
+                if ($file->fgetc() !== "\n") {
+                    $totalLines++;
+                }
+                $file->rewind();
+            }
 
             $startLine = max(0, $totalLines - $limit);
             $file->seek($startLine);
