@@ -90,75 +90,74 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
 
 ```
 smbstack/
-├── acl/                         # Static access-control lists for Samba
-│   └── commonveto.txt              # Veto list for common unwanted file types (active by default in smb.conf)
+├── acl/                            # deployed to: /etc/smbstack/acl [0755 root:root]
+│   └── commonveto.txt              # Samba veto list [0644 root:root]
 │
-├── conf/                        # Samba, rsyslog and Apache configuration
-│   ├── fullaudit.conf              # rsyslog full audit rule
-│   ├── smb.conf                    # Samba main config (placeholders: your_user, compartida)
-│   └── smbweb.conf                 # Apache vhost (:3092/?tab=shared, ?tab=audit and ?tab=report)
+├── conf/                           # Samba, rsyslog and Apache configuration
+│   ├── fullaudit.conf              # deployed to: /etc/rsyslog.d/fullaudit.conf [0644 root:root]
+│   ├── smb.conf                    # deployed to: /etc/samba/smb.conf [0644 root:root]
+│   └── smbweb.conf                 # deployed to: /etc/apache2/sites-available/smbweb.conf [0644 root:root]
 │
-├── tools/                      # Background watchdog and maintenance scripts
-│   ├── smbstackenv.sh              # Shared Bash configuration reader (sourced, not executed)
-│   ├── smbbk.sh                    # Configuration backup for smbstack
-│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch)
-│   ├── smbreport.sh                # Disk usage report for the shared folder (daily cron)
-│   └── smbwatch.sh                 # Shared folder size monitor (self-managed)
+├── tools/                          # deployed to: /etc/smbstack/tools [0755 root:root]
+│   ├── smbstackenv.sh              # shared Bash configuration reader [0644 root:root]
+│   ├── smbbk.sh                    # Configuration backup for smbstack [0755 root:root]
+│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch) [0755 root:root]
+│   ├── smbreport.sh                # Disk usage report for the shared folder (daily cron) [0755 root:root]
+│   └── smbwatch.sh                 # Shared folder size monitor (self-managed) [0755 root:root]
 │
-├── web/                        # Web front-end: shared-folder browser, audit log viewer and disk report
-│   ├── icon.svg                    # PWA / apple-touch icon
-│   ├── index.php                   # Main page (Shared / Audit / Report tabs)
-│   ├── manifest.json               # PWA manifest
-│   ├── smbshared.php               # Shared folder dynamic browser
-│   ├── smbapi.php                  # Audit log and disk report reader API
-│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool
-│   ├── smbaudit.html               # Audit log viewer UI
-│   ├── smbreport.html              # Disk report viewer UI
-│   └── sw.js                       # PWA service worker (app-shell cache only)
+├── web/                            # deployed to: /var/www/smbstack/web [0755 www-data:www-data]
+│   ├── icon.svg                    # PWA / apple-touch icon [0755 www-data:www-data]
+│   ├── index.php                   # Main page (Shared / Audit / Report tabs) [0755 www-data:www-data]
+│   ├── manifest.json               # PWA manifest [0755 www-data:www-data]
+│   ├── smbshared.php               # Shared folder dynamic browser [0755 www-data:www-data]
+│   ├── smbapi.php                  # Audit log and disk report reader API [0755 www-data:www-data]
+│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool [0755 www-data:www-data]
+│   ├── smbaudit.html               # Audit log viewer UI [0755 www-data:www-data]
+│   ├── smbreport.html              # Disk report viewer UI [0755 www-data:www-data]
+│   └── sw.js                       # PWA service worker (app-shell cache only) [0755 www-data:www-data]
 │
-└── smbsetup.sh                 # Installer: install, update, uninstall, status
+└── smbsetup.sh                     # Installer: install, update, uninstall, status
 ```
 
-<table width="100%">
-  <tr>
-    <td style="width: 50%; vertical-align: top;">
-      Files and directories generated at runtime (not included in the repository):
-    </td>
-    <td style="width: 50%; vertical-align: top;">
-      Archivos y directorios generados en runtime (no incluidos en el repositorio):
-    </td>
-  </tr>
-</table>
+### Additional Installed Paths
 
 ```
-/var/www/smbstack/
-├── .size_cache/                # Folder size cache used by smbshared.php (www-data, pruned daily by cron)
-└── web/                        # Deployed copy of web/ (served by Apache on :3092)
-    └── smbreport.json          # Disk report written by tools/smbreport.sh (root:www-data, 640)
+/var/www/smbstack/                  # panel root [0755 root:root]
+├── .size_cache/                    # folder size cache [0700 www-data:www-data]
+└── web/
+    └── smbreport.json              # generated disk usage report [0640 root:www-data]
 
-/etc/smbstack/
-├── acl/                        # Deployed copy of acl/ (root:root, 644)
-│   └── commonveto.txt          # Veto list included by smb.conf
-├── tools/                      # Deployed tools (root:root, 755); smbstackenv.sh is 644
-└── smbstack.env                # Saved install config (user, paths, network, trusted proxies, watch limit, max log lines)
+/etc/smbstack/                      # installed configuration root [0755 root:root]
+└── smbstack.env                    # generated configuration [0640 root:www-data]
 
-/etc/bak/smbstack/              # Archives written by tools/smbbk.sh (smbbk_<YYYYMMDD_HHMMSS>.zip, last 3 kept),
-                                # run by --update before overwriting application code, and by its own monthly cron
-/etc/cron.d/smbstack            # All cron entries of the project, one file
+/etc/apache2/sites-enabled/
+└── smbweb.conf                     # link to ../sites-available/smbweb.conf [0777 root:root]
 
-/var/log/smbwatch.log           # smbwatch.sh runtime log (root:root, 640)
-/var/log/smbload.log            # smbload.sh runtime log, rewritten on each run
-/var/log/smbstack.log           # smbbk.sh and smbreport.sh runtime log, shared
-smbsetup.log                    # In smbsetup.sh's own directory, rewritten on each run
+/etc/cron.d/
+├── smbstack                        # scheduled tasks [0644 root:root]
+└── smbstack.lock                   # cron writer lock [0600 root:root]
 
-/home/$local_user/shared/       # Shared folder (independent of the installer)
-├── .recycle/                   # Recycle Bin (smbguest/, www-data/, smbwatch/)
-└── DEMO/                       # Demo folder
+/etc/logrotate.d/
+├── samba                           # Samba log rotation [0644 root:root]
+├── smbstack                        # SMBstack log rotation [0644 root:root]
+└── smbwatch                        # folder monitor log rotation [0644 root:root]
 
-/etc/logrotate.d/samba          # Generated by installer (heredoc)
-/etc/logrotate.d/smbwatch       # Generated by installer (heredoc), rotates /var/log/smbwatch.log
-/var/log/samba/log.audit        # Created by rsyslog
-/var/log/samba/log.samba        # Created by installer, written directly by smbd
+/etc/bak/smbstack/                  # last three configuration backups [0700 root:root]
+
+/var/log/
+├── samba/                          # Samba log directory, observed [0750 root:adm]
+│   ├── log.audit                   # Samba audit log [0660 root:adm]
+│   └── log.samba                   # Samba log, initial permissions [0660 root:adm]
+├── smbwatch.log                    # folder monitor log [0640 root:root]
+├── smbload.log                     # service watchdog log, observed [0644 root:root]
+└── smbstack.log                    # backup and report log [0640 root:adm]
+
+smbsetup.log                        # installer log, reset each run
+
+/home/$local_user/shared/           # Shared folder (independent of the installer)
+├── .recycle/                       # Recycle Bin (smbguest/, www-data/, smbwatch/)
+└── DEMO/                           # Demo folder
+
 ```
 
 ## HOW TO USE
@@ -329,10 +328,10 @@ sudo bash smbsetup.sh --status
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      Shared Bash reader installed at <code>/etc/smbstack/tools/smbstackenv.sh</code> (root:root, 644). <code>smbsetup.sh</code>, <code>smbbk.sh</code>, <code>smbreport.sh</code> and <code>smbwatch.sh</code> load it with <code>source</code> and declare their allowed keys. It parses <code>smbstack.env</code> without executing it; file permissions and key validation remain with each caller. Installation and update deploy it before consumers; the backup and report tools also copy it when registering themselves. Do not run it separately or schedule it in cron.
+      Shared Bash reader installed at <code>/etc/smbstack/tools/smbstackenv.sh</code>. <code>smbsetup.sh</code>, <code>smbbk.sh</code>, <code>smbreport.sh</code> and <code>smbwatch.sh</code> load it with <code>source</code> and declare their allowed keys. It parses <code>smbstack.env</code> without executing it; file permissions and key validation remain with each caller. Installation and update deploy it before consumers; the backup and report tools also copy it when registering themselves. Do not run it separately or schedule it in cron.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      Lector Bash compartido instalado en <code>/etc/smbstack/tools/smbstackenv.sh</code> (root:root, 644). <code>smbsetup.sh</code>, <code>smbbk.sh</code>, <code>smbreport.sh</code> y <code>smbwatch.sh</code> lo cargan mediante <code>source</code> y declaran sus claves permitidas. Interpreta <code>smbstack.env</code> sin ejecutarlo; los permisos y la validación de claves permanecen en cada script. La instalación y la actualización despliegan el lector antes de sus consumidores; las herramientas de respaldo e informes también lo copian cuando se registran. No se ejecuta por separado ni se programa en cron.
+      Lector Bash compartido instalado en <code>/etc/smbstack/tools/smbstackenv.sh</code>. <code>smbsetup.sh</code>, <code>smbbk.sh</code>, <code>smbreport.sh</code> y <code>smbwatch.sh</code> lo cargan mediante <code>source</code> y declaran sus claves permitidas. Interpreta <code>smbstack.env</code> sin ejecutarlo; los permisos y la validación de claves permanecen en cada script. La instalación y la actualización despliegan el lector antes de sus consumidores; las herramientas de respaldo e informes también lo copian cuando se registran. No se ejecuta por separado ni se programa en cron.
     </td>
   </tr>
 </table>
