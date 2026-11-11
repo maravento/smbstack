@@ -491,7 +491,7 @@ sudo pdbedit -L
 | Channel | Stamped by |
 |---------|------------|
 | SMB (LAN clients) | `recycle:touch_mtime = yes` in `smb.conf` |
-| Web interface (Apache) | `recycle_touch()` in `web/smbshared.php`, applied recursively so a recycled folder carries its contents |
+| Web interface (Apache) | `web/smbshared.php`, applied recursively so a recycled folder carries its contents |
 | Size-limit watchdog | `touch` after the move, in `tools/smbwatch.sh` |
 
 > A restored item therefore carries the date it was recycled, not its original one.
