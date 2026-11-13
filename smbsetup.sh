@@ -92,11 +92,9 @@ fi
 info "using local user: $local_user"
 
 # dependencies
-for dep_pkg in apache2-utils libapache2-mod-php php logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep; do
-    if [[ "$(dpkg-query -W -f='${Status}' "$dep_pkg" 2>/dev/null)" != *"ok installed"* ]]; then
-        abort "'$dep_pkg' is not installed -abort"
-    fi
-done
+# Every package the deployed components need. Installed by install_deps
+# in --install and --update.
+apt_deps=(apache2-utils libapache2-mod-php php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils)
 
 # ------------------------------------------------------------------------------
 # VARIABLES
@@ -495,9 +493,9 @@ retry_cmd() {
     local attempt=1
     until "$@"; do
         if [ "$attempt" -ge "$max_attempts" ]; then
-            abort "Samba package installation failed -abort"
+            abort "package installation failed -abort"
         fi
-        info "Samba packages: retry $((attempt + 1))/$max_attempts"
+        info "packages: retry $((attempt + 1))/$max_attempts"
         attempt=$((attempt + 1))
         sleep 10
     done
@@ -746,6 +744,58 @@ list_ipv4_ifaces() {
     done < <(list_ifaces)
 }
 
+# check ipv4 interfaces
+check_ipv4_interfaces() {
+    local max_attempts=24 attempt=1
+
+    while (( attempt <= max_attempts )); do
+        if [ -n "$(list_ipv4_ifaces)" ]; then
+            return 0
+        fi
+        if (( attempt == 1 )); then
+            log "INFO: waiting for an interface with IPv4..."
+        fi
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+
+    log "ERROR: no interface with IPv4 -abort"
+    exit 1
+}
+
+# check internet
+check_internet() {
+    local max_attempts=24 attempt=1
+
+    while (( attempt <= max_attempts )); do
+        if getent hosts www.google.com >/dev/null 2>&1; then
+            return 0
+        fi
+        if (( attempt == 1 )); then
+            log "INFO: waiting for internet..."
+        fi
+        attempt=$((attempt + 1))
+        sleep 5
+    done
+
+    log "ERROR: no internet connection -abort"
+    exit 1
+}
+
+# DEPENDENCIES
+# Install the missing packages of apt_deps
+install_deps() {
+    local dep_pkg missing_pkgs=()
+    for dep_pkg in "${apt_deps[@]}"; do
+        [[ "$(dpkg-query -W -f='${Status}' "$dep_pkg" 2>/dev/null)" == *"ok installed"* ]] || missing_pkgs+=("$dep_pkg")
+    done
+    (( ${#missing_pkgs[@]} == 0 )) && return 0
+    check_ipv4_interfaces
+    check_internet
+    retry_cmd env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_pkgs[@]}"
+    info "Installed: ${missing_pkgs[*]}"
+}
+
 # LAN SELECTION
 # Select an existing interface and one of its configured IPv4 addresses
 choose_lan_interface() {
@@ -906,7 +956,7 @@ install_project_logrotate() {
     chmod 640 "$project_log" || return 1
     cat > "$rotate_file" <<EOF
 $project_log {
-    daily
+    weekly
     rotate 7
     compress
     delaycompress
@@ -930,6 +980,7 @@ do_install() {
     check_conflicts "SMB server" ksmbd-tools
     check_conflicts "syslog" syslog-ng
     check_port tcp 3092 "web interface"
+    install_deps
 
     if ! systemctl is-active --quiet apache2; then
         err "apache2 is not running"
@@ -943,9 +994,6 @@ do_install() {
 
     # enable required apache modules
     a2enmod -q headers mime rewrite
-
-    # samba packages
-    retry_cmd env DEBIAN_FRONTEND=noninteractive apt-get install -y samba samba-common samba-common-bin smbclient winbind cifs-utils
 
     systemctl enable smbd.service
     systemctl enable winbind.service
@@ -1029,6 +1077,7 @@ do_install() {
         systemctl restart rsyslog > /dev/null 2>&1 || true
     endscript
     compress
+    delaycompress
     notifempty
 }
 /var/log/samba/log.samba {
@@ -1039,6 +1088,7 @@ do_install() {
         systemctl reload smbd > /dev/null || true
     endscript
     compress
+    delaycompress
     notifempty
 }
 EOF
@@ -1051,6 +1101,7 @@ EOF
     rotate 7
     create 0640 root root
     compress
+    delaycompress
     notifempty
 }
 EOF
@@ -1148,7 +1199,7 @@ EOF
         abort "cannot deploy smbstackenv.sh -abort"
     fi
     if ! { cp -f "$tools_dir"/*.sh "$smbstack_tools/" \
-        && chmod +x "$smbstack_tools"/*.sh \
+        && chmod 750 "$smbstack_tools"/*.sh \
         && chmod 644 "$smbstack_tools/smbstackenv.sh"; }; then
         abort "cannot deploy tools -abort"
     fi
@@ -1307,6 +1358,7 @@ update_apache_port() {
 }
 
 do_update() {
+    install_deps
     [ -f "$smbstack_env" ] || abort "smbstack is not installed -abort"
     load_smbstack_env "$smbstack_env" "$env_keys" || abort "cannot read smbstack.env -abort"
     update_reset /etc/cron.d/smbstack
@@ -1315,7 +1367,7 @@ do_update() {
         update_file "$web_dir/$file" "$smbstack_web/$file" 755 www-data:www-data
     done
     for file in smbload.sh smbbk.sh smbreport.sh smbwatch.sh smbstackenv.sh; do
-        mode=755
+        mode=750
         [ "$file" != smbstackenv.sh ] || mode=644
         update_file "$tools_dir/$file" "$smbstack_tools/$file" "$mode" root:root
     done
@@ -1384,6 +1436,8 @@ do_uninstall() {
         fi
         uninstall_shared_path="${SHARED_PATH:-}"
     fi
+    pdbedit -x smbguest 2>/dev/null || true
+    setfacl -x u:smbguest "/home/${LOCAL_USER:-$local_user}" 2>/dev/null || true
     userdel smbguest 2>/dev/null || true
 
     # apache sites
@@ -1422,6 +1476,7 @@ do_uninstall() {
     [ -f /etc/logrotate.d/rsyslog.bak ] && cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog
     rm -f /etc/logrotate.d/smbstack && info "Removed /etc/logrotate.d/smbstack"
     rm -f /etc/logrotate.d/smbwatch && info "Removed /etc/logrotate.d/smbwatch"
+    rm -f -- /var/log/smbstack.log /var/log/smbstack.log.* /var/log/smbwatch.log /var/log/smbwatch.log.* && info "Removed smbstack and smbwatch logs"
 
     # smb.conf
     [ -f /etc/samba/smb.conf.bak ] && cp -f /etc/samba/smb.conf.bak /etc/samba/smb.conf
@@ -1432,10 +1487,6 @@ do_uninstall() {
     # cron entries
     rm -f /etc/cron.d/smbstack /etc/cron.d/smbstack.update-disabled
     exec 202>&-
-
-    # samba packages
-    DEBIAN_FRONTEND=noninteractive apt-get remove -y samba samba-common samba-common-bin smbclient winbind cifs-utils
-    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y
 
     systemctl daemon-reload
     systemctl restart apache2 rsyslog || abort "cannot restart apache2 or rsyslog -abort"
@@ -1546,7 +1597,7 @@ env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME'
 # ------------------------------------------------------------------------------
 
 # Run the action given on the command line, or fall back to the menu
-log "EVENT: smbsetup start..."
+log "INFO: smbsetup start..."
 
 case "${1:-}" in
     --install) do_install ;;
@@ -1561,4 +1612,4 @@ case "${1:-}" in
         ;;
 esac
 
-log "EVENT: smbsetup done"
+log "INFO: smbsetup done"

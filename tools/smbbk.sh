@@ -66,8 +66,8 @@ done
 # VARIABLES
 # ------------------------------------------------------------------------------
 
-installed_path="/etc/smbstack/tools/$(basename "$0")"
 smbstack_env="/etc/smbstack/smbstack.env"
+installed_path="/etc/smbstack/tools/$(basename "$0")"
 
 # temp file for user/group snapshot -- always cleaned up on exit
 tmp_users_file=$(mktemp)
@@ -78,6 +78,8 @@ trap 'rm -f "$tmp_users_file"' EXIT
 # FUNCTIONS
 # ------------------------------------------------------------------------------
 
+# Monthly is the floor, not a recommendation: it exists so an untouched
+# system still has a recent copy. Run it by hand before any change.
 # CRON_D
 # Replace one task; retain other project tasks and serialize writers.
 cron_d_set() (
@@ -115,8 +117,6 @@ cron_d_set() (
     fi
 )
 
-# Monthly is the floor, not a recommendation: it exists so an untouched
-# system still has a recent copy. Run it by hand before any change.
 register_cron() {
     # Deploy self first: the cron entry must point at a path that exists,
     # whether this ran from the repo or from its final location.
@@ -127,8 +127,14 @@ register_cron() {
             log "ERROR: cannot create $(dirname "$installed_path") -abort"
             exit 1
         fi
-        install -m 644 -o root -g root "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh"
-        install -m 755 -o root -g root "$script_path" "$installed_path"
+        install -m 644 -o root -g root "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh" \
+            || { log "ERROR: cannot deploy smbstackenv.sh -abort"; exit 1; }
+        cmp -s -- "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh" \
+            || { log "ERROR: src and dst do not match: smbstackenv.sh -abort"; exit 1; }
+        install -m 750 -o root -g root "$script_path" "$installed_path" \
+            || { log "ERROR: cannot deploy $(basename "$installed_path") -abort"; exit 1; }
+        cmp -s -- "$script_path" "$installed_path" \
+            || { log "ERROR: src and dst do not match: $(basename "$installed_path") -abort"; exit 1; }
         log "INFO: deployed to $installed_path"
     fi
 
@@ -140,31 +146,6 @@ deregister_cron() {
     cron_d_set "$installed_path" "" || { log "ERROR: cannot write project cron -abort"; return 1; }
     log "INFO: smbbk backup cron removed, archives kept"
 }
-
-# Start
-case "${1:-}" in
-    --install)
-        log "EVENT: smbbk start..."
-        register_cron || exit 1
-        log "EVENT: smbbk done"
-        exit 0
-        ;;
-    --uninstall)
-        log "EVENT: smbbk start..."
-        deregister_cron || exit 1
-        log "EVENT: smbbk done"
-        exit 0
-        ;;
-    "")
-        log "EVENT: smbbk start..."
-        ;;
-    *)
-        log "ERROR: invalid option -abort"
-        echo "Usage: $(basename "$0") [--install|--uninstall]"
-        echo "Without arguments: create a backup"
-        exit 1
-        ;;
-esac
 
 # ------------------------------------------------------------------------------
 # ENV
@@ -196,16 +177,15 @@ unset env_specs env_spec env_path env_owner_want env_perms_want
 unset env_owner env_perms
 
 # LOAD_CONF
-# Read known key=value pairs from a config file, without sourcing it
-source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh"
+if ! source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh" 2>/dev/null; then
+    log "ERROR: cannot load smbstackenv.sh -abort"
+    exit 1
+fi
 env_keys='LOCAL_USER BACKUP_DIR'
-
 # LOAD
-# Reads smbstack.env; a missing key is handled by the check below
-load_smbstack_env "$smbstack_env" "$env_keys" || true
+load_smbstack_env "$smbstack_env" "$env_keys" || { log "ERROR: cannot load smbstack.env -abort"; exit 1; }
 
 # KEY CHECK
-# Collect every failure first, then decide -- a single abort reports them all
 key_errors=()
 for env_key in LOCAL_USER; do
     if ! grep -q "^${env_key}=" "$smbstack_env"; then
@@ -232,6 +212,31 @@ if [[ "${BACKUP_DIR:-}" != "$backup_dir" ]] \
     exit 1
 fi
 backup_zip="${backup_dir}/smbbk_$(date +%Y%m%d_%H%M%S).zip"
+
+# Start
+case "${1:-}" in
+    --install)
+        log "INFO: smbbk start..."
+        register_cron || exit 1
+        log "INFO: smbbk done"
+        exit 0
+        ;;
+    --uninstall)
+        log "INFO: smbbk start..."
+        deregister_cron || exit 1
+        log "INFO: smbbk done"
+        exit 0
+        ;;
+    "")
+        log "INFO: smbbk start..."
+        ;;
+    *)
+        log "ERROR: invalid option -abort"
+        echo "Usage: $(basename "$0") [--install|--uninstall]"
+        echo "Without arguments: create a backup"
+        exit 1
+        ;;
+esac
 
 # ------------------------------------------------------------------------------
 # BACKUP
@@ -277,7 +282,7 @@ do
     if [ -e "$backup_item" ]; then
         backup_list+=("$backup_item")
     else
-        log "INFO: $backup_item not present -skip"
+        log "INFO: $(basename "$backup_item") not present"
     fi
 done
 
@@ -336,7 +341,7 @@ else
     zip_status=$?
     trap - INT
     rm -f "$backup_part"
-    log "ERROR: cannot write archive $(basename "$backup_zip") (zip exit $zip_status) -abort"
+    log "ERROR: zip failed ($zip_status): $(basename "$backup_zip") -abort"
     exit 1
 fi
 
@@ -344,4 +349,4 @@ fi
 # END
 # ------------------------------------------------------------------------------
 
-log "EVENT: smbbk done"
+log "INFO: smbbk done"

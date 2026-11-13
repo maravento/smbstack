@@ -284,10 +284,16 @@ sudo bash smbsetup.sh
 | `tools/smbwatch.sh` | ✅ overwritten | ✅ removed |
 | `/etc/smbstack/smbstack.env` | ⛔ preserved | ✅ removed |
 | Shared folder (`/home/$local_user/shared/`) | ⛔ never touched | ⛔ never touched |
+| Samba accounts of the administrator and `smbguest`, the `smbguest` system user and its ACL on the user's home | ⛔ preserved | ✅ removed |
+| APT packages (Samba, Apache, PHP and the rest of the installer list) | ✅ missing ones installed | ⛔ preserved |
 
 > The shared folder is independent of the installer. To remove it, do so manually: `rm -rf /home/$local_user/shared`
 >
 > La carpeta compartida es independiente del instalador. Para eliminarla, hazlo manualmente: `rm -rf /home/$local_user/shared`
+>
+> `--uninstall` removes the project only. It never uninstalls APT packages: other projects and the system may share them.
+>
+> `--uninstall` elimina solo el proyecto. Nunca desinstala paquetes APT, porque otros proyectos y el sistema pueden compartirlos.
 
 #### Backup
 
@@ -698,6 +704,31 @@ sudo cat /etc/cron.d/smbstack
 |---|---|---|---|
 | `WATCH_LIMIT_GB` | `10` | Size limit per monitored folder, in GB | Límite de tamaño por carpeta monitoreada, en GB |
 | `WATCH_EXCLUDE` | `NONE` | Comma-separated folder names excluded from monitoring (e.g. `FINANCE,LEGAL`) | Nombres de carpetas separados por comas excluidas del monitoreo |
+| `WATCH_ROOT_ALLOW` | `DEMO,DEMO2,demo.url` | Optional; `--install` writes `DEMO`, the folder created by `smbsetup.sh`, plus two samples of the format. Replace them with the real names. Comma-separated folders and files allowed in the share root (e.g. `FINANCE,LEGAL,SWIM.url`). Anything else that appears there is moved to the recycle bin. Empty or missing: the root guard is off | Opcional; `--install` escribe `DEMO`, la carpeta que crea `smbsetup.sh`, y dos ejemplos del formato. Reemplázalos por los nombres reales. Carpetas y archivos separados por comas permitidos en la raíz del recurso (p. ej. `FINANCE,LEGAL,SWIM.url`). Todo lo demás que aparezca ahí se mueve a la papelera. Vacía o ausente: la vigilancia de la raíz queda apagada |
+
+#### Root guard
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      SMB clients cannot write in the share root, but the owner of the root and <code>root</code> can, for example a sync tool running on the server. With <code>WATCH_ROOT_ALLOW</code> set, the watcher moves any new folder or file of the root that is not in that list to <code>.recycle/smbwatch/&amp;lt;YYYYMMDD&amp;gt;/</code>. Entries already present at start are not moved; each one that is not in the list is reported with a <code>WARNING</code>. A listed name missing from the root, or an empty key, is reported too. <code>.recycle</code> is always allowed.<br><br>To add a new folder or file to the root: add its exact name to <code>WATCH_ROOT_ALLOW</code>, run <code>--stop</code> and <code>--start</code>, and then create it.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      Los clientes SMB no pueden escribir en la raíz del recurso, pero el dueño de la raíz y <code>root</code> sí, por ejemplo una herramienta de sincronización que corre en el servidor. Con <code>WATCH_ROOT_ALLOW</code> definida, el vigilante mueve a <code>.recycle/smbwatch/&amp;lt;AAAAMMDD&amp;gt;/</code> cualquier carpeta o archivo nuevo de la raíz que no esté en esa lista. Lo que ya existe al arrancar no se mueve; cada entrada que no esté en la lista se informa con un <code>WARNING</code>. También se informa un nombre de la lista que no exista en la raíz, o la clave vacía. <code>.recycle</code> siempre está permitida.<br><br>Para agregar una carpeta o archivo nuevo en la raíz: escribe su nombre exacto en <code>WATCH_ROOT_ALLOW</code>, ejecuta <code>--stop</code> y <code>--start</code>, y luego créalo.
+    </td>
+  </tr>
+</table>
+
+```text
+2026-11-13 10:00:00 INFO: root guard on: 6 allowed name(s)
+2026-11-13 10:00:00 WARNING: allowed but not in root: HACINEDA -alert
+2026-11-13 10:00:00 WARNING: in root but not allowed: suelto.txt -alert
+2026-11-13 10:05:12 INFO: moved from root to recycle: intruso.txt
+```
+
+```text
+2026-11-13 10:00:00 WARNING: WATCH_ROOT_ALLOW not set, root guard off -alert
+```
 
 #### File Checks
 
@@ -753,8 +784,8 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 ```
 
 ```text
-2026-10-17 12:00:00 EVENT: Stopping smbwatch...
-2026-10-17 12:00:00 EVENT: SMBwatch status...
+2026-10-17 12:00:00 INFO: Stopping smbwatch...
+2026-10-17 12:00:00 INFO: SMBwatch status...
 ```
 
 #### Monitored folder list
@@ -807,10 +838,10 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      Project log: <code>/var/log/smbstack.log</code>. Installation and update configure daily rotation in <code>/etc/logrotate.d/smbstack</code>, keeping seven previous files plus the active log. Compression starts on the next rotation. Empty logs are not rotated; missing logs are tolerated.
+      Project log: <code>/var/log/smbstack.log</code>. Installation and update configure weekly rotation in <code>/etc/logrotate.d/smbstack</code>, keeping seven previous files plus the active log. Compression starts on the next rotation. Empty logs are not rotated; missing logs are tolerated.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      Log del proyecto: <code>/var/log/smbstack.log</code>. La instalación y la actualización configuran rotación diaria en <code>/etc/logrotate.d/smbstack</code>. Se conservan siete archivos anteriores y el activo. La compresión comienza en la siguiente rotación. Los logs vacíos no se rotan; los ausentes se toleran.
+      Log del proyecto: <code>/var/log/smbstack.log</code>. La instalación y la actualización configuran rotación semanal en <code>/etc/logrotate.d/smbstack</code>. Se conservan siete archivos anteriores y el activo. La compresión comienza en la siguiente rotación. Los logs vacíos no se rotan; los ausentes se toleran.
     </td>
   </tr>
 </table>
@@ -853,6 +884,7 @@ sudo tee -a /etc/logrotate.d/samba > /dev/null <<'EOF'
         systemctl reload nmbd 2>/dev/null || true
     endscript
     compress
+    delaycompress
     notifempty
 }
 EOF

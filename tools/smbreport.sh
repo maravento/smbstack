@@ -142,7 +142,7 @@ register_cron() {
             exit 1
         fi
         if ! { install -m 644 -o root -g root "$(dirname "$script_path")/smbstackenv.sh" "$(dirname "$installed_path")/smbstackenv.sh" \
-            && install -m 755 -o root -g root "$script_path" "$installed_path"; }; then
+            && install -m 750 -o root -g root "$script_path" "$installed_path"; }; then
             log "ERROR: cannot deploy to $installed_path -abort"
             exit 1
         fi
@@ -329,18 +329,18 @@ fi
 
 case "${1:-}" in
     --install)
-        log "EVENT: smbreport start..."
+        log "INFO: smbreport start..."
         register_cron
-        log "EVENT: smbreport done"
+        log "INFO: smbreport done"
         exit 0
         ;;
     --uninstall)
-        log "EVENT: smbreport start..."
+        log "INFO: smbreport start..."
         deregister_cron
-        log "EVENT: smbreport done"
+        log "INFO: smbreport done"
         exit 0
         ;;
-    "")        log "EVENT: smbreport start..."; build_report ;;
+    "")        log "INFO: smbreport start..."; build_report ;;
     *)         log "ERROR: invalid option -abort"; echo "Usage: $0 [--install|--uninstall]" >&2; exit 1 ;;
 esac || exit 1
 
@@ -348,4 +348,4 @@ esac || exit 1
 # END
 # ------------------------------------------------------------------------------
 
-log "EVENT: smbreport done"
+log "INFO: smbreport done"

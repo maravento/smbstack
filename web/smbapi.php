@@ -32,6 +32,7 @@ header('Access-Control-Allow-Headers: Content-Type');
 // Configuration - READ MULTIPLE FILES
 define('LOG_FILES', [
     '/var/log/samba/log.audit',      // Current file
+    '/var/log/samba/log.audit.1',    // Last rotation, not yet compressed
     '/var/log/samba/log.audit.1.gz', // Rotated logs
     '/var/log/samba/log.audit.2.gz',
     '/var/log/samba/log.audit.3.gz',

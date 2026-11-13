@@ -66,7 +66,7 @@ done
 # ------------------------------------------------------------------------------
 
 # start
-log "EVENT: smbload start..."
+log "INFO: smbload start..."
 
 # Samba Service (smbd)
 if ! pgrep -x smbd > /dev/null; then
@@ -126,4 +126,4 @@ is_smbwatch_running() {
 # END
 # ------------------------------------------------------------------------------
 
-log "EVENT: smbload done"
+log "INFO: smbload done"

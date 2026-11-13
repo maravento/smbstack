@@ -134,7 +134,7 @@ echo "   - That's " . number_format(min($MAX_LOG_LINES, $totalLines)) . " lines 
 if ($totalLines > $MAX_LOG_LINES) {
     echo "⚠️  WARNING: Your log file has more than " . number_format($MAX_LOG_LINES) . " lines!\n";
     echo "   The API only reads the last " . number_format($MAX_LOG_LINES) . " lines from the current file.\n";
-    echo "   Older entries are not being read unless they're in rotated .gz files.\n\n";
+    echo "   Older entries are not being read unless they're in rotated files.\n\n";
 }
 
 // Show last few entries

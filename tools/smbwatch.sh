@@ -186,6 +186,28 @@ handle_new_file() {
     fi
 }
 
+# HANDLE ROOT ENTRY
+# Move a new entry of the shared root that is not in WATCH_ROOT_ALLOW
+handle_root_entry() {
+    local root_entry="$1" entry_name allowed_name dest_path
+    entry_name="$(basename "$root_entry")"
+    # the recycle bin itself is never moved
+    [ "$entry_name" = .recycle ] && return
+    for allowed_name in "${root_allow[@]}"; do
+        [ "$entry_name" = "$allowed_name" ] && return
+    done
+    [ -e "$root_entry" ] || [ -L "$root_entry" ] || return
+
+    dest_path="$recycle_dir/$(date +%Y%m%d)"
+    install -d -o root -g root -m 755 "$recycle_dir" "$dest_path"
+    if ! mv -f --backup=numbered "$root_entry" "$dest_path/$entry_name"; then
+        log "WARNING: cannot recycle $entry_name -alert"
+        return 1
+    fi
+    touch -h "$dest_path/$entry_name"
+    log "INFO: moved from root to recycle: $entry_name"
+}
+
 # ------------------------------------------------------------------------------
 # ENV
 # ------------------------------------------------------------------------------
@@ -218,7 +240,7 @@ unset env_owner env_perms
 # LOAD_CONF
 # Read known key=value pairs from a config file, without sourcing it
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh"
-env_keys='SHARED_PATH WATCH_LIMIT_GB WATCH_EXCLUDE'
+env_keys='SHARED_PATH WATCH_LIMIT_GB WATCH_EXCLUDE WATCH_ROOT_ALLOW'
 
 # LOAD
 # Reads smbstack.env; a missing key is handled by the check below
@@ -347,6 +369,12 @@ install_module() {
         else
             log "INFO: no folders excluded"
         fi
+        # default: DEMO from smbsetup.sh plus two samples of the format;
+        # an existing line is kept
+        if ! grep -q '^WATCH_ROOT_ALLOW=' "$smbstack_env"; then
+            set_env_var "WATCH_ROOT_ALLOW" "DEMO,DEMO2,demo.url"
+            log "INFO: root allow set to samples; edit $(basename "$smbstack_env")"
+        fi
 
         if [ "$watch_header_added" -eq 1 ]; then
             echo "# =============================================================================" >> "$smbstack_env"
@@ -380,7 +408,7 @@ uninstall_module() (
         log "ERROR: cannot update $(basename "$smbstack_env") -abort"
         exit 1
     fi
-    if ! { sed '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d' "$smbstack_env" \
+    if ! { sed '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d; /^WATCH_ROOT_ALLOW=/d' "$smbstack_env" \
             | sed -z 's/\n\n# =*\n# SMBWATCH (added by smbwatch.sh --install)\n# =*\n# =*\n/\n/' > "$env_tmp" \
         && chown --reference="$smbstack_env" -- "$env_tmp" \
         && chmod --reference="$smbstack_env" -- "$env_tmp" \
@@ -449,6 +477,15 @@ start() (
         exit 1
     fi
 
+    # Root guard: off while WATCH_ROOT_ALLOW is empty or missing
+    root_path="${SHARED_PATH%/}"
+    root_allow=()
+    IFS=',' read -ra allow_list <<< "${WATCH_ROOT_ALLOW:-}"
+    for allowed_name in "${allow_list[@]}"; do
+        allowed_name="${allowed_name#"${allowed_name%%[![:space:]]*}"}" ; allowed_name="${allowed_name%"${allowed_name##*[![:space:]]}"}"
+        [ -n "$allowed_name" ] && root_allow+=("$allowed_name")
+    done
+
     printf '%s\n' "${watch_dirs[@]}" > "$state_file"
 
     log "INFO: starting smbwatch"
@@ -458,6 +495,26 @@ start() (
         log "INFO: watching $(basename "$watch_dir")"
     done
     log "INFO: excluded: ${WATCH_EXCLUDE:-none}"
+    if (( ${#root_allow[@]} > 0 )); then
+        log "INFO: root guard on: ${#root_allow[@]} allowed name(s)"
+        # a typo in the list or a stray entry already present is only reported
+        for allowed_name in "${root_allow[@]}"; do
+            [ -e "$root_path/$allowed_name" ] \
+                || log "WARNING: allowed but not in root: $allowed_name -alert"
+        done
+        while IFS= read -r -d '' root_entry; do
+            entry_name="$(basename "$root_entry")"
+            [ "$entry_name" = .recycle ] && continue
+            is_allowed=0
+            for allowed_name in "${root_allow[@]}"; do
+                [ "$entry_name" = "$allowed_name" ] && is_allowed=1 && break
+            done
+            [ "$is_allowed" -eq 1 ] \
+                || log "WARNING: in root but not allowed: $entry_name -alert"
+        done < <(find "$root_path" -mindepth 1 -maxdepth 1 -print0)
+    else
+        log "WARNING: WATCH_ROOT_ALLOW not set, root guard off -alert"
+    fi
     log "INFO: recycle bin: .recycle/smbwatch"
     log "INFO: log: $log_file"
 
@@ -468,7 +525,20 @@ start() (
     # folder would otherwise skip the limit. A directory only ever fires
     # create, and is recognized by the ISDIR flag.
     set -m
-    inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 202>&- 2>>"$log_file" | while IFS='|' read -r event_name new_file; do
+    # The root watcher is not recursive and shares the pipe, so --stop ends
+    # both watchers with the same process group.
+    {
+        inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 202>&- 2>>"$log_file" &
+        if (( ${#root_allow[@]} > 0 )); then
+            inotifywait -m -e create -e close_write -e moved_to --format '%e|%w%f' "$root_path" 202>&- 2>>"$log_file" &
+        fi
+        wait
+    } | while IFS='|' read -r event_name new_file; do
+        # a folder moved into the root counts too; below the root it does not
+        if [[ "${new_file%/*}" == "$root_path" ]]; then
+            handle_root_entry "$new_file"
+            continue
+        fi
         case "$event_name" in
             *ISDIR*)      [[ "$event_name" == CREATE* ]] || continue ;;
             CLOSE_WRITE*|MOVED_TO*) ;;
@@ -496,7 +566,7 @@ start() (
 # STOP
 # Kill the watcher process group and remove its pid file
 stop() {
-    log "EVENT: Stopping smbwatch..."
+    log "INFO: Stopping smbwatch..."
     if [ -f "$pid_file" ]; then
         local watch_pid process_group
         watch_pid=$(cat "$pid_file")
@@ -521,7 +591,7 @@ stop() {
 # STATUS
 # Report whether the watcher is running
 status() {
-    log "EVENT: SMBwatch status..."
+    log "INFO: SMBwatch status..."
     if [ -f "$pid_file" ] && is_smbwatch_running "$(cat "$pid_file")"; then
         log "INFO: SMBwatch is RUNNING (PID $(cat "$pid_file"))"
         log "INFO: Watch limit: ${WATCH_LIMIT_GB:-not set} GB per folder"
@@ -541,7 +611,7 @@ status() {
 # ACTIONS
 # ------------------------------------------------------------------------------
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch start..."
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO: smbwatch start..."
 
 case "${1:-}" in
     --install)   install_module ;;
@@ -555,7 +625,7 @@ case "${1:-}" in
         fi
         if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
             echo "SMBwatch removal cancelled."
-            echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch done"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') INFO: smbwatch done"
             exit 0
         fi
         uninstall_module
@@ -570,4 +640,4 @@ esac || exit 1
 # END
 # ------------------------------------------------------------------------------
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') EVENT: smbwatch done"
+echo "$(date '+%Y-%m-%d %H:%M:%S') INFO: smbwatch done"
