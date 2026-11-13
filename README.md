@@ -100,21 +100,21 @@ smbstack/
 │
 ├── tools/                          # deployed to: /etc/smbstack/tools [0755 root:root]
 │   ├── smbstackenv.sh              # shared Bash configuration reader [0644 root:root]
-│   ├── smbbk.sh                    # Configuration backup for smbstack [0755 root:root]
-│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch) [0755 root:root]
-│   ├── smbreport.sh                # Disk usage report for the shared folder (daily cron) [0755 root:root]
-│   └── smbwatch.sh                 # Shared folder size monitor (self-managed) [0755 root:root]
+│   ├── smbbk.sh                    # Configuration backup for smbstack [0750 root:root]
+│   ├── smbload.sh                  # Service watchdog (smbd + winbind + smbwatch) [0750 root:root]
+│   ├── smbreport.sh                # Disk usage report for the shared folder (daily cron) [0750 root:root]
+│   └── smbwatch.sh                 # Shared folder size monitor (self-managed) [0750 root:root]
 │
 ├── web/                            # deployed to: /var/www/smbstack/web [0755 www-data:www-data]
-│   ├── icon.svg                    # PWA / apple-touch icon [0755 www-data:www-data]
-│   ├── index.php                   # Main page (Shared / Audit / Report tabs) [0755 www-data:www-data]
-│   ├── manifest.json               # PWA manifest [0755 www-data:www-data]
-│   ├── smbshared.php               # Shared folder dynamic browser [0755 www-data:www-data]
-│   ├── smbapi.php                  # Audit log and disk report reader API [0755 www-data:www-data]
-│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool [0755 www-data:www-data]
-│   ├── smbaudit.html               # Audit log viewer UI [0755 www-data:www-data]
-│   ├── smbreport.html              # Disk report viewer UI [0755 www-data:www-data]
-│   └── sw.js                       # PWA service worker (app-shell cache only) [0755 www-data:www-data]
+│   ├── icon.svg                    # PWA / apple-touch icon [0644 www-data:www-data]
+│   ├── index.php                   # Main page (Shared / Audit / Report tabs) [0644 www-data:www-data]
+│   ├── manifest.json               # PWA manifest [0644 www-data:www-data]
+│   ├── smbshared.php               # Shared folder dynamic browser [0644 www-data:www-data]
+│   ├── smbapi.php                  # Audit log and disk report reader API [0644 www-data:www-data]
+│   ├── smbaudit-diagnostic.php     # Audit log diagnostic tool [0644 www-data:www-data]
+│   ├── smbaudit.html               # Audit log viewer UI [0644 www-data:www-data]
+│   ├── smbreport.html              # Disk report viewer UI [0644 www-data:www-data]
+│   └── sw.js                       # PWA service worker (app-shell cache only) [0644 www-data:www-data]
 │
 └── smbsetup.sh                     # Installer: install, update, uninstall, status
 ```
@@ -300,10 +300,10 @@ sudo bash smbsetup.sh
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      Before updating, <code>--update</code> runs <code>tools/smbbk.sh</code> to back up the installation to <code>BACKUP_DIR</code>, which must be <code>/etc/bak/smbstack</code>. It replaces the web application and tools. It preserves the installed Samba and rsyslog configuration. For Apache, it preserves <code>smbweb.conf</code> while setting its VirtualHost ports to <code>3092</code>, and adds <code>Listen 127.0.0.1:3092</code> to <code>ports.conf</code> if no listener for that port exists. It also regenerates project cron entries and log rotation rules.
+      Before updating, <code>--update</code> runs <code>tools/smbbk.sh</code> to back up the installation to <code>BACKUP_DIR</code>, which must be <code>/etc/bak/smbstack</code>. It replaces the web application and tools. It preserves the installed Samba and rsyslog configuration. For Apache, it preserves <code>smbweb.conf</code> while setting its VirtualHost ports to <code>3092</code>, and adds <code>Listen 127.0.0.1:3092</code> to <code>ports.conf</code> if no listener for that port exists. It also regenerates project cron entries and log rotation rules. It repairs the owner and mode of <code>/etc/smbstack/acl</code> and <code>commonveto.txt</code>, without rewriting the list.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      Antes de actualizar, <code>--update</code> ejecuta <code>tools/smbbk.sh</code> para respaldar la instalación en <code>BACKUP_DIR</code>, que debe ser <code>/etc/bak/smbstack</code>. Reemplaza la aplicación web y las herramientas. Conserva la configuración instalada de Samba y rsyslog. Para Apache, conserva <code>smbweb.conf</code> y ajusta sus puertos de VirtualHost a <code>3092</code>; añade <code>Listen 127.0.0.1:3092</code> a <code>ports.conf</code> si no existe una escucha para ese puerto. También regenera las entradas cron y las reglas de rotación de registros del proyecto.
+      Antes de actualizar, <code>--update</code> ejecuta <code>tools/smbbk.sh</code> para respaldar la instalación en <code>BACKUP_DIR</code>, que debe ser <code>/etc/bak/smbstack</code>. Reemplaza la aplicación web y las herramientas. Conserva la configuración instalada de Samba y rsyslog. Para Apache, conserva <code>smbweb.conf</code> y ajusta sus puertos de VirtualHost a <code>3092</code>; añade <code>Listen 127.0.0.1:3092</code> a <code>ports.conf</code> si no existe una escucha para ese puerto. También regenera las entradas cron y las reglas de rotación de registros del proyecto. Repara el propietario y los permisos de <code>/etc/smbstack/acl</code> y <code>commonveto.txt</code>, sin reescribir la lista.
     </td>
   </tr>
 </table>
@@ -756,10 +756,10 @@ sudo /etc/smbstack/tools/smbwatch.sh --start
 # Stop
 sudo /etc/smbstack/tools/smbwatch.sh --stop
 
-# Status
+# Status (reports whether the watcher is running)
 sudo /etc/smbstack/tools/smbwatch.sh --status
 
-# Uninstall (stops it, removes the cron entry and both keys)
+# Uninstall (asks for confirmation, stops it, removes the cron entry and both keys)
 sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 ```
 

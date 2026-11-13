@@ -1040,7 +1040,8 @@ do_install() {
         [ -f "$web_file" ] || continue
         cp -f "$web_file" "$smbstack_web/" || abort "cannot copy web files -abort"
     done
-    if ! chmod -R 755 "$smbstack_web"; then
+    if ! { find "$smbstack_web" -type d -exec chmod 755 {} + \
+        && find "$smbstack_web" -type f -exec chmod 644 {} +; }; then
         abort "cannot set Samba web permissions -abort"
     fi
     if ! chown -R www-data:www-data "$smbstack_web"; then
@@ -1364,7 +1365,7 @@ do_update() {
     update_reset /etc/cron.d/smbstack
     local file mode
     for file in smbapi.php smbreport.html icon.svg smbaudit.html smbshared.php index.php smbaudit-diagnostic.php sw.js manifest.json; do
-        update_file "$web_dir/$file" "$smbstack_web/$file" 755 www-data:www-data
+        update_file "$web_dir/$file" "$smbstack_web/$file" 644 www-data:www-data
     done
     for file in smbload.sh smbbk.sh smbreport.sh smbwatch.sh smbstackenv.sh; do
         mode=750
@@ -1389,6 +1390,13 @@ do_update() {
     update_stop_service apache2
     update_wait_jobs
     update_apply
+    # Repair the veto list modes set by --install; the list is never rewritten
+    install -d -m 755 -o root -g root "$smbstack_acl" \
+        || update_error "cannot set permissions on $smbstack_acl"
+    if [ -f "$smbstack_acl/commonveto.txt" ]; then
+        chown root:root "$smbstack_acl/commonveto.txt" && chmod 644 "$smbstack_acl/commonveto.txt" \
+            || update_error "cannot set permissions on commonveto.txt"
+    fi
     update_apache_port /etc/apache2/ports.conf /etc/apache2/sites-available/smbweb.conf 127.0.0.1 3092
     apache2ctl configtest || update_error "Apache configuration invalid"
     local deploy_file escaped_user
