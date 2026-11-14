@@ -47,11 +47,36 @@ FILE: README.md
   </tr>
 </table>
 
+### Network
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <p>Installation and update require the following:</p>
+      <ul>
+        <li>At least one interface must have an UP link and configured global IPv4.</li>
+        <li>Internet access is required when installing or updating packages and downloading components.</li>
+        <li>The selected LAN IPv4 must be static and persistent.</li>
+      </ul>
+      <p>The operation continues if the applicable requirements above are met; otherwise, it aborts.</p>
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <p>La instalación y actualización requieren lo siguiente:</p>
+      <ul>
+        <li>Al menos una interfaz debe tener enlace UP e IPv4 global configurada.</li>
+        <li>Se requiere Internet para instalar o actualizar paquetes y descargar componentes.</li>
+        <li>La IPv4 LAN seleccionada debe ser estática y persistente.</li>
+      </ul>
+      <p>La operación continúa si se cumplen los requisitos anteriores que correspondan; de lo contrario, aborta.</p>
+    </td>
+  </tr>
+</table>
+
 ### Software
 
 - Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
 - `rsyslog`, `logrotate`
-- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip`, `python3` (checked by `smbsetup.sh`)
+- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip`, `python3`, `python3-yaml` (checked by `smbsetup.sh`)
 - `inotify-tools`, `procps`, `coreutils`, `findutils`, `cron`, `util-linux`, `sed`, `grep` (checked by `tools/smbwatch.sh`)
 - `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd` (checked by `tools/smbload.sh`)
 - `zip`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbbk.sh`)
@@ -60,7 +85,7 @@ FILE: README.md
 ```bash
 apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
     acl openssl cron iproute2 sudo systemd util-linux sed grep inotify-tools \
-    procps coreutils findutils zip python3
+    procps coreutils findutils zip python3 python3-yaml
 ```
 
 The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbsetup.sh` itself.
@@ -70,6 +95,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
     <td style="width: 50%; vertical-align: top;">
       <strong>Important</strong>
       <ul>
+        <li>Fresh installation aborts if Samba or SMBStack is already installed. Samba alone must be removed first; an existing SMBStack installation requires <code>--update</code> or <code>--uninstall</code>. Otherwise, it installs Samba and replaces its generated <code>smb.conf</code> without prompting, keeping a <code>.bak</code> copy.</li>
         <li>The installer aborts if <code>nginx</code>, <code>lighttpd</code>, <code>caddy</code>, <code>ksmbd-tools</code> or <code>syslog-ng</code> are installed.</li>
         <li>The web panel listens on port <code>3092</code>, registered by <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">IANA</a> as Unassigned.</li>
       </ul>
@@ -77,6 +103,7 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
     <td style="width: 50%; vertical-align: top;">
       <strong>Importante</strong>
       <ul>
+        <li>La instalación nueva aborta si Samba o SMBStack ya están instalados. Si solo existe Samba, pide desinstalarlo primero; si existe SMBStack, indica usar <code>--update</code> o <code>--uninstall</code>. En caso contrario, instala Samba y reemplaza el <code>smb.conf</code> generado sin preguntar, conservando una copia <code>.bak</code>.</li>
         <li>El instalador aborta si <code>nginx</code>, <code>lighttpd</code>, <code>caddy</code>, <code>ksmbd-tools</code> o <code>syslog-ng</code> están instalados.</li>
         <li>El panel web escucha en el puerto <code>3092</code>, registrado por <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">IANA</a> como Sin asignar.</li>
       </ul>
@@ -241,10 +268,9 @@ sudo bash smbsetup.sh
 
 | Prompt | Description | Descripción |
 |--------|-------------|-------------|
-| Shared folder name | Name for the shared folder (created under `/home/$local_user/`) | Nombre de la carpeta compartida (creada bajo `/home/$local_user/`) |
+| Shared folder name | Name for the shared folder (created under `/home/$local_user/`). Same ASCII format and 1–255 character limit described for `WATCH_ROOT_ALLOW` | Nombre de la carpeta compartida (creada bajo `/home/$local_user/`). Mismo formato ASCII y límite de 1 a 255 caracteres descritos para `WATCH_ROOT_ALLOW` |
 | Network interface | Selected from available interfaces listed. The Samba network is derived from its address and prefix | Seleccionada de las interfaces disponibles listadas. La red de Samba se deriva de su dirección y prefijo |
 | Samba password | Password for the automatically detected account | Contraseña de la cuenta detectada automáticamente |
-| Overwrite smb.conf | Only asked if `/etc/samba/smb.conf` already exists | Solo se pregunta si `/etc/samba/smb.conf` ya existe |
 
 > To use a shared folder located outside `/home/$local_user/`, edit `/etc/samba/smb.conf` and `/etc/apache2/sites-available/smbweb.conf` manually after the installation.
 >
@@ -704,7 +730,7 @@ sudo cat /etc/cron.d/smbstack
 |---|---|---|---|
 | `WATCH_LIMIT_GB` | `10` | Size limit per monitored folder, in GB | Límite de tamaño por carpeta monitoreada, en GB |
 | `WATCH_EXCLUDE` | `NONE` | Comma-separated folder names excluded from monitoring (e.g. `FINANCE,LEGAL`) | Nombres de carpetas separados por comas excluidas del monitoreo |
-| `WATCH_ROOT_ALLOW` | `DEMO,DEMO2,demo.url` | Optional; `--install` writes `DEMO`, the folder created by `smbsetup.sh`, plus two samples of the format. Replace them with the real names. Comma-separated folders and files allowed in the share root (e.g. `FINANCE,LEGAL,SWIM.url`). Anything else that appears there is moved to the recycle bin. Empty or missing: the root guard is off | Opcional; `--install` escribe `DEMO`, la carpeta que crea `smbsetup.sh`, y dos ejemplos del formato. Reemplázalos por los nombres reales. Carpetas y archivos separados por comas permitidos en la raíz del recurso (p. ej. `FINANCE,LEGAL,SWIM.url`). Todo lo demás que aparezca ahí se mueve a la papelera. Vacía o ausente: la vigilancia de la raíz queda apagada |
+| `WATCH_ROOT_ALLOW` | `DEMO,DEMO2,demo.url` | Optional; `--install` writes `DEMO`, the folder created by `smbsetup.sh`, plus two samples of the format. Replace them with the real names. Comma-separated folders and files allowed in the share root (e.g. `FINANCE,LEGAL,SWIM.url`). Anything else that appears there is moved to the recycle bin. Names must be 1–255 ASCII characters: start with a letter or digit; then letters, digits, internal spaces, hyphens, underscores and dots. No trailing space or dot. Hidden names, non-ASCII characters, paths, wildcards and control characters are rejected. Separate names with commas, without surrounding spaces or empty entries. Matching is case-sensitive. An invalid list prevents startup; the warning identifies the entry number. Examples are not created automatically. Empty or missing: the root guard is off | Opcional; `--install` escribe `DEMO`, la carpeta que crea `smbsetup.sh`, y dos ejemplos del formato. Reemplázalos por los nombres reales. Carpetas y archivos separados por comas permitidos en la raíz del recurso (p. ej. `FINANCE,LEGAL,SWIM.url`). Todo lo demás que aparezca ahí se mueve a la papelera. Los nombres deben tener entre 1 y 255 caracteres ASCII: empezar por letra o número; después pueden contener letras, números, espacios internos, guiones, guiones bajos y puntos. No pueden terminar en espacio ni punto. Se rechazan nombres ocultos, caracteres no ASCII, rutas, comodines y caracteres de control. Separe los nombres con comas, sin espacios alrededor ni elementos vacíos. Se distinguen mayúsculas y minúsculas. Una lista inválida impide el arranque; el aviso identifica el número de elemento. Los ejemplos no se crean automáticamente. Vacía o ausente: la vigilancia de la raíz queda apagada |
 
 #### Root guard
 
@@ -779,8 +805,8 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 ```text
 2026-10-17 12:00:00 WARNING: WATCH_LIMIT_GB missing line -alert
 2026-10-17 12:00:00 WARNING: WATCH_EXCLUDE missing line -alert
-2026-10-17 12:00:00 ERROR: 2 key(s) invalid in smbstack.env
-2026-10-17 12:00:00 ERROR: run 'smbwatch.sh --install' first -abort
+2026-10-17 12:00:00 ERROR: [1/2] 2 key(s) invalid in smbstack.env
+2026-10-17 12:00:00 ERROR: [2/2] run 'smbwatch.sh --install' first -abort
 ```
 
 ```text

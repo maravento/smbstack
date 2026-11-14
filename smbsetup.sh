@@ -7,11 +7,12 @@
 # FILE: smbsetup.sh
 #
 # USAGE:
-# sudo bash smbsetup.sh --install      Fresh install
-# sudo bash smbsetup.sh --update       Refresh code and permissions
-# sudo bash smbsetup.sh --uninstall    Remove smbstack
-# sudo bash smbsetup.sh --status       Report the current state
-# sudo bash smbsetup.sh                Interactive menu
+# ACTION                        COMMAND
+# Fresh install                 sudo bash smbsetup.sh --install
+# Refresh code and permissions  sudo bash smbsetup.sh --update
+# Remove smbstack               sudo bash smbsetup.sh --uninstall
+# Report the current state      sudo bash smbsetup.sh --status
+# Interactive menu              sudo bash smbsetup.sh
 #
 # LOG: smbsetup.log, in this script's directory
 #
@@ -28,6 +29,67 @@ if [ "$(id -u)" != "0" ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') ERROR: This script must be run as root -abort" >&2
     exit 1
 fi
+
+prompt_smb_net_iface() {
+    choose_lan_interface "${SMBSTACK_IFACE:-}"
+    iface_answer="$lan_iface_answer"
+    read_lan_ipv4 "$iface_answer"
+    check_static_lan "$iface_answer" "${lan_cidr_answer%/*}"
+    local iface_cidr iface_only iface_prefix o1 o2 o3 o4 ip_num mask_num net_num
+    iface_cidr="$lan_cidr_answer"
+    iface_only="${iface_cidr%/*}"
+    iface_prefix="${iface_cidr#*/}"
+    IFS=. read -r o1 o2 o3 o4 <<< "$iface_only"
+    ip_num=$(( (o1 << 24) + (o2 << 16) + (o3 << 8) + o4 ))
+    mask_num=$(( 0xFFFFFFFF ^ ((1 << (32 - iface_prefix)) - 1) ))
+    net_num=$(( ip_num & mask_num ))
+    net_answer="$(( (net_num >> 24) & 255 )).$(( (net_num >> 16) & 255 )).$(( (net_num >> 8) & 255 )).$(( net_num & 255 ))/$iface_prefix"
+    info "Samba network: $net_answer ($iface_answer)"
+}
+
+check_requirements() {
+    local network_command
+    for network_command in ip awk python3; do
+        command -v "$network_command" >/dev/null 2>&1 \
+            || abort "network command '$network_command' missing -abort"
+    done
+    case "$1" in
+        install)
+            check_already_installed
+            require_static_lan_candidate
+            check_conflicts "web server" nginx lighttpd caddy
+            check_conflicts "SMB server" ksmbd-tools
+            check_conflicts "syslog" syslog-ng
+            check_port tcp 3092 "web interface"
+            prompt_smb_net_iface
+            ;;
+        update)
+            [ -f "$smbstack_env" ] || abort "smbstack is not installed -abort"
+            load_smbstack_env "$smbstack_env" "$env_keys" \
+                || abort "cannot read smbstack.env -abort"
+            local network_key
+            for network_key in SMB_IFACE SERVER_IP; do
+                [ -n "${!network_key:-}" ] \
+                    || abort "$network_key not set -abort"
+            done
+            choose_lan_interface "${SMB_IFACE:-}"
+            check_static_lan "${SMB_IFACE:-}" "${SERVER_IP:-}"
+            ;;
+    esac
+    check_ipv4_interfaces
+    if [ "$1" = install ]; then
+        check_internet
+    else
+        local package
+        for package in "${apt_deps[@]}"; do
+            if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null \
+                | grep -q "ok installed"; then
+                check_internet
+                break
+            fi
+        done
+    fi
+}
 
 # prevent overlapping runs
 script_lock="/var/lock/$(basename "$0" .sh).lock"
@@ -94,7 +156,7 @@ info "using local user: $local_user"
 # dependencies
 # Every package the deployed components need. Installed by install_deps
 # in --install and --update.
-apt_deps=(apache2-utils libapache2-mod-php php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils)
+apt_deps=(python3-yaml apache2-utils libapache2-mod-php php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils)
 
 # ------------------------------------------------------------------------------
 # VARIABLES
@@ -113,6 +175,7 @@ smbstack_env="$smbstack_etc/smbstack.env"
 
 # validation -- one variable per thing validated; use directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
+UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
 UH_CIDR='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])/(3[0-2]|[12][0-9]|[0-9])$'
 
@@ -378,8 +441,8 @@ update_apply() {
             if (( ${#compared_file} <= 19 )); then
                 update_error "src and dst do not match: $compared_file"
             fi
-            log "ERROR: src and dst: $compared_file"
-            update_error "src and dst do not match"
+            log "ERROR: [1/2] src and dst: $compared_file"
+            update_error "[2/2] src and dst do not match"
         }
         info "updated $(basename "$target")"
     done
@@ -489,15 +552,24 @@ register_project_cron() {
 }
 
 retry_cmd() {
-    local max_attempts=10
-    local attempt=1
-    until "$@"; do
-        if [ "$attempt" -ge "$max_attempts" ]; then
-            abort "package installation failed -abort"
+    [ "$#" -ge 2 ] || return 2
+    local retry_label="$1" retry_attempt retry_status
+    shift
+    for retry_attempt in 1 2 3; do
+        if "$@"; then
+            return 0
+        else
+            retry_status=$?
         fi
-        info "packages: retry $((attempt + 1))/$max_attempts"
-        attempt=$((attempt + 1))
-        sleep 10
+        [ "$retry_attempt" -lt 3 ] || return "$retry_status"
+        if declare -F log >/dev/null; then
+            log "INFO: $retry_label: retry $((retry_attempt + 1))/3" >&2
+        else
+            printf '%s INFO: %s: retry %s/3\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" "$retry_label" \
+                "$((retry_attempt + 1))" >&2
+        fi
+        sleep 5
     done
 }
 
@@ -538,12 +610,12 @@ if result.returncode != 0 or result.stderr.strip():
 sys.stdout.write(result.stdout)
 PY
     ); then
-        err "cannot check ${proto^^} port $port"
-        abort "fix the ss query before installing -abort"
+        err "[1/2] cannot check ${proto^^} port $port"
+        abort "[2/2] fix the ss query before installing -abort"
     fi
     if [ -n "$port_listeners" ]; then
-        err "${proto^^} port $port in use by another $role"
-        abort "stop that service before installing -abort"
+        err "[1/2] ${proto^^} port $port in use by another $role"
+        abort "[2/2] stop that service before installing -abort"
     fi
 }
 
@@ -557,8 +629,8 @@ check_repo() {
     done
     if [ "$missing_dir" -eq 1 ]; then
         echo ""
-        err "repository files not found"
-        err "clone it from github.com/maravento/smbstack -abort"
+        err "[1/2] repository files not found"
+        err "[2/2] clone github.com/maravento/smbstack -abort"
         echo ""
         exit 1
     fi
@@ -571,11 +643,15 @@ select_shared_folder() {
     echo "Shared folder setup"
     echo "-------------------"
     while true; do
-        read -p "Enter shared folder name [shared]: " folder_answer
+        IFS= read -r -p "Enter shared folder name [shared]: " folder_answer
         folder_answer="${folder_answer:-shared}"
-        if [[ "$folder_answer" =~ [^a-zA-Z0-9_-] ]]; then
+        if ! (
+            LC_ALL=C
+            [[ "$folder_answer" =~ $UH_ENTRY_NAME ]] \
+                && (( ${#folder_answer} <= 255 ))
+        ); then
             info "invalid folder name"
-            info "use letters, numbers, hyphens, underscores -retry"
+            info "use ASCII letters, digits, spaces, ._-; max 255 -retry"
             folder_answer=""
         else
             break
@@ -792,7 +868,7 @@ install_deps() {
     (( ${#missing_pkgs[@]} == 0 )) && return 0
     check_ipv4_interfaces
     check_internet
-    retry_cmd env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_pkgs[@]}"
+    retry_cmd "install packages" env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_pkgs[@]}" || abort "package installation failed -abort"
     info "Installed: ${missing_pkgs[*]}"
 }
 
@@ -827,8 +903,8 @@ choose_lan_interface() {
     for iface_index in "${!lan_candidates[@]}"; do
         iface_name="${lan_candidates[$iface_index]}"
         iface_state=$(ip -br link show "$iface_name" | awk '{print $2}')
-        iface_addrs=$(ip -4 -o addr show dev "$iface_name" scope global | awk '{print $4}' | paste -sd' ')
-        printf ' [%d] %s (%s, %s)\n' "$((iface_index + 1))" "$iface_name" "$iface_state" "${iface_addrs:-no IPv4}"
+        printf ' [%d] %s (%s)\n' "$((iface_index + 1))" "$iface_name" "$iface_state"
+        describe_lan_ipv4 "$iface_name"
     done
     while true; do
         read -r -p "Select LAN Interface [1-${#lan_candidates[@]}]: " iface_choice || {
@@ -842,6 +918,171 @@ choose_lan_interface() {
         fi
         log "INFO: invalid LAN interface selection -retry"
     done
+}
+
+check_static_lan() {
+    local static_result
+    static_result=$(python3 -I - "$1" "$2" <<'STATIC_LAN'
+import configparser
+import fnmatch
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+
+iface, address = sys.argv[1:]
+
+def run(*args):
+    return subprocess.check_output(
+        args, text=True, stderr=subprocess.DEVNULL, timeout=10,
+        env={**os.environ, 'LC_ALL': 'C', 'SYSTEMD_PAGER': 'cat'}).strip()
+
+def has_address(values):
+    return any(str(ipaddress.ip_interface(value.split(',')[0]).ip)
+               == address for value in values)
+
+def persistent_static():
+    data = json.loads(run('ip', '-j', '-4', 'addr', 'show', 'dev', iface))
+    selected = [entry for link in data for entry in link['addr_info']
+                if entry.get('local') == address]
+    if len(selected) != 1:
+        return 'unknown'
+    entry = selected[0]
+    if entry.get('dynamic') or 'dynamic' in entry.get('flags', []):
+        return 'dhcp'
+
+    nm_active = False
+    if shutil.which('nmcli'):
+        try:
+            uuid = run('nmcli', '-g', 'GENERAL.CON-UUID',
+                       'device', 'show', iface)
+            if uuid and uuid != '--':
+                nm_active = True
+                method = run('nmcli', '-g', 'ipv4.method',
+                             'connection', 'show', uuid)
+                addresses = run('nmcli', '-g', 'ipv4.addresses',
+                                'connection', 'show', uuid)
+                if method != 'manual' or not has_address(
+                        addresses.split(', ')):
+                    return 'unknown'
+                rows = run('nmcli', '-t', '--escape', 'no',
+                           '-f', 'UUID,FILENAME', 'connection', 'show')
+                netplan_profile = False
+                for row in rows.splitlines():
+                    key, _, filename = row.partition(':')
+                    if key != uuid:
+                        continue
+                    netplan_profile = (filename.startswith('/run/') and
+                                       '/netplan-' in filename)
+                    if not filename.startswith('/etc/'):
+                        continue
+                    config = configparser.ConfigParser(interpolation=None)
+                    config.read(filename)
+                    if config.get('ipv4', 'method') != 'manual':
+                        return 'unknown'
+                    values = [value for key, value in config['ipv4'].items()
+                              if re.fullmatch(r'address\d+', key)]
+                    if has_address(values):
+                        return 'static'
+                if not netplan_profile:
+                    return 'unknown'
+        except (OSError, ValueError, configparser.Error,
+                subprocess.SubprocessError):
+            if nm_active:
+                return 'unknown'
+
+    if not shutil.which('netplan'):
+        return 'unknown'
+    # Runtime Netplan overrides cannot prove persistent configuration.
+    if list(Path('/run/netplan').glob('*.yaml')):
+        return 'unknown'
+    if not nm_active:
+        status = run('networkctl', '--no-pager', 'status', iface)
+        if not re.search(r'Network File: .*netplan.*\.network', status):
+            return 'unknown'
+    import yaml
+    try:
+        network = yaml.safe_load(run('netplan', 'get')).get('network', {})
+    except yaml.YAMLError:
+        return 'unknown'
+    for kind in ('ethernets', 'wifis', 'bridges', 'bonds', 'vlans'):
+        for name, config in network.get(kind, {}).items():
+            match = config.get('match', {})
+            if match:
+                mac = data[0].get('permaddr', data[0].get('address', ''))
+                matches = not (set(match) - {'name', 'macaddress'})
+                if 'name' in match:
+                    matches &= fnmatch.fnmatchcase(iface, match['name'])
+                if 'macaddress' in match:
+                    matches &= mac.lower() == match['macaddress'].lower()
+                if config.get('set-name') == iface:
+                    matches = True
+            else:
+                matches = name == iface
+            if matches and has_address(config.get('addresses', [])):
+                return 'static'
+    return 'unknown'
+
+try:
+    print(persistent_static())
+except (OSError, ValueError, KeyError, TypeError, AttributeError,
+        ImportError, subprocess.SubprocessError):
+    print('unknown')
+STATIC_LAN
+    ) || static_result=unknown
+    if [ "${3:-}" = probe ]; then
+        printf '%s\n' "$static_result"
+        return 0
+    fi
+    case "$static_result" in
+        static) return 0 ;;
+        dhcp)
+            log "ERROR: [1/2] LAN $1: $2 uses DHCP"
+            log "ERROR: [2/2] configure a static LAN IPv4 -abort"
+            ;;
+        *)
+            log "ERROR: [1/2] LAN $1: $2"
+            log "ERROR: [2/2] cannot verify persistent static IPv4 -abort"
+            ;;
+    esac
+    exit 1
+}
+
+lan_ipv4_condition() {
+    case "$(check_static_lan "$1" "$2" probe)" in
+        static) printf 'static' ;;
+        dhcp) printf 'dynamic' ;;
+        *) printf 'unverified' ;;
+    esac
+}
+
+describe_lan_ipv4() {
+    local cidr
+    while read -r cidr; do
+        printf '      %s (%s)\n' "$cidr" \
+            "$(lan_ipv4_condition "$1" "${cidr%/*}")"
+    done < <(ip -4 -o addr show dev "$1" scope global | awk '{print $4}')
+}
+
+require_static_lan_candidate() {
+    local iface cidr
+    local -a candidates=()
+    mapfile -t candidates < <(list_ipv4_ifaces)
+    (( ${#candidates[@]} > 1 )) || return 0
+    for iface in "${candidates[@]}"; do
+        while read -r cidr; do
+            if [ "$(check_static_lan "$iface" "${cidr%/*}" probe)" = static ]; then
+                return 0
+            fi
+        done < <(ip -4 -o addr show dev "$iface" scope global | awk '{print $4}')
+    done
+    log "ERROR: [1/2] no interface has a verified static IPv4"
+    log "ERROR: [2/2] configure a static LAN IPv4 -abort"
+    exit 1
 }
 
 read_lan_ipv4() {
@@ -874,7 +1115,10 @@ read_lan_ipv4() {
     fi
     echo "IPv4 addresses on LAN '$selected_iface':"
     for ipv4_index in "${!lan_addresses[@]}"; do
-        printf ' [%d] %s\n' "$((ipv4_index + 1))" "${lan_addresses[$ipv4_index]}"
+        printf ' [%d] %s (%s)\n' "$((ipv4_index + 1))" \
+            "${lan_addresses[$ipv4_index]}" \
+            "$(lan_ipv4_condition "$selected_iface" \
+                "${lan_addresses[$ipv4_index]%/*}")"
     done
     while true; do
         read -r -p "Select LAN IPv4 number: " ipv4_choice || {
@@ -898,6 +1142,12 @@ check_already_installed() {
     local already_installed=0
     local skip_reasons=""
 
+    if dpkg-query -W -f='${Status}' samba 2>/dev/null \
+        | grep -q "ok installed"; then
+        already_installed=1
+        skip_reasons+=" - Samba package is installed\n"
+    fi
+
     if pdbedit -L 2>/dev/null | grep -q ":"; then
         already_installed=1
         skip_reasons+=" - Samba users already registered (pdbedit)\n"
@@ -919,8 +1169,11 @@ check_already_installed() {
 
     if [ "$already_installed" -eq 1 ]; then
         echo ""
-        err "Samba is already installed"
-        err "update with: sudo bash smbsetup.sh --update -abort"
+        if [ -f "$smbstack_env" ]; then
+            err "SMBStack installed; use --update | --uninstall -abort"
+        else
+            err "Samba is already installed. remove -abort"
+        fi
         echo ""
         printf "%b" "$skip_reasons"
         echo ""
@@ -973,23 +1226,19 @@ EOF
 }
 
 do_install() {
-    check_already_installed
+    check_requirements install
 
     # dependency check
-    check_conflicts "web server" nginx lighttpd caddy
-    check_conflicts "SMB server" ksmbd-tools
-    check_conflicts "syslog" syslog-ng
-    check_port tcp 3092 "web interface"
     install_deps
 
     if ! systemctl is-active --quiet apache2; then
-        err "apache2 is not running"
-        abort "start it with: systemctl start apache2 -abort"
+        err "[1/2] apache2 is not running"
+        abort "[2/2] start it with: systemctl start apache2 -abort"
     fi
 
     if ! systemctl is-active --quiet rsyslog; then
-        err "rsyslog is not running"
-        abort "start it with: systemctl start rsyslog -abort"
+        err "[1/2] rsyslog is not running"
+        abort "[2/2] start it with: systemctl start rsyslog -abort"
     fi
 
     # enable required apache modules
@@ -1108,21 +1357,6 @@ EOF
 EOF
 
     # smb.conf
-    prompt_smb_net_iface() {
-        choose_lan_interface "${SMBSTACK_IFACE:-}"
-        iface_answer="$lan_iface_answer"
-        read_lan_ipv4 "$iface_answer"
-        local iface_cidr iface_only iface_prefix o1 o2 o3 o4 ip_num mask_num net_num
-        iface_cidr="$lan_cidr_answer"
-        iface_only="${iface_cidr%/*}"
-        iface_prefix="${iface_cidr#*/}"
-        IFS=. read -r o1 o2 o3 o4 <<< "$iface_only"
-        ip_num=$(( (o1 << 24) + (o2 << 16) + (o3 << 8) + o4 ))
-        mask_num=$(( 0xFFFFFFFF ^ ((1 << (32 - iface_prefix)) - 1) ))
-        net_num=$(( ip_num & mask_num ))
-        net_answer="$(( (net_num >> 24) & 255 )).$(( (net_num >> 16) & 255 )).$(( (net_num >> 8) & 255 )).$(( net_num & 255 ))/$iface_prefix"
-        info "Samba network: $net_answer ($iface_answer)"
-    }
 
     apply_smb_conf_placeholders() {
         local escaped_user
@@ -1139,36 +1373,14 @@ EOF
     }
 
     if [ -f /etc/samba/smb.conf ]; then
-        while true; do
-            read -p "smb.conf already exists. Overwrite? (y/n) [n]: " overwrite_answer
-            overwrite_answer="${overwrite_answer:-n}"
-            case "$overwrite_answer" in
-                [Yy])
-                    cp -f /etc/samba/smb.conf{,.bak} \
-                        && info "smb.conf backup saved as smb.conf.bak"
-                    cp -f "$conf_dir/smb.conf" /etc/samba/smb.conf
-                    apply_smb_conf_placeholders
-                    prompt_smb_net_iface
-                    apply_smb_conf_interfaces
-                    break
-                    ;;
-                [Nn])
-                    warn "smb.conf: existing configuration kept"
-                    warn "smb.conf: add share, full_audit and recycle -alert"
-                    prompt_smb_net_iface
-                    break
-                    ;;
-                *)
-                    info "answer y or n -retry"
-                    ;;
-            esac
-        done
-    else
-        cp -f "$conf_dir/smb.conf" /etc/samba/smb.conf
-        apply_smb_conf_placeholders
-        prompt_smb_net_iface
-        apply_smb_conf_interfaces
+        cp -f /etc/samba/smb.conf{,.bak} \
+            || abort "cannot back up smb.conf -abort"
+        info "smb.conf backup saved as smb.conf.bak"
     fi
+    cp -f "$conf_dir/smb.conf" /etc/samba/smb.conf \
+        || abort "cannot install smb.conf -abort"
+    apply_smb_conf_placeholders
+    apply_smb_conf_interfaces
 
     # veto list required by the include line in smb.conf. Open per rules.md 14:
     # smbd's per-connection child reads the include as the authenticated user.
@@ -1209,8 +1421,8 @@ EOF
 
     detected_ip="${lan_cidr_answer%/*}"
     if ! [[ "$detected_ip" =~ $UH_IPV4 ]]; then
-        err "no IPv4 address on $iface_answer"
-        abort "check the interface and run again -abort"
+        err "[1/2] no IPv4 address on $iface_answer"
+        abort "[2/2] check the interface and run again -abort"
     fi
     # Drop any prior Listen line for this port (a stale IP or a bare
     # "Listen 3092") before adding the current ones.
@@ -1359,6 +1571,7 @@ update_apache_port() {
 }
 
 do_update() {
+    check_requirements update
     install_deps
     [ -f "$smbstack_env" ] || abort "smbstack is not installed -abort"
     load_smbstack_env "$smbstack_env" "$env_keys" || abort "cannot read smbstack.env -abort"
@@ -1598,7 +1811,7 @@ show_menu() {
 # LOAD_CONF
 # Load the shared configuration reader
 source "$tools_dir/smbstackenv.sh"
-env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME'
+env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME SERVER_IP'
 
 # ------------------------------------------------------------------------------
 # ACTIONS

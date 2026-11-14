@@ -7,11 +7,12 @@
 # FILE: tools/smbwatch.sh
 #
 # USAGE:
-# sudo bash smbwatch.sh --install      Ask for the keys and --start the watcher
-# sudo bash smbwatch.sh --uninstall    Confirm removal of the cron entry and keys
-# sudo bash smbwatch.sh --start        Start the watcher
-# sudo bash smbwatch.sh --stop         Stop the watcher
-# sudo bash smbwatch.sh --status       Report whether the watcher runs
+# ACTION                                      COMMAND
+# Ask for the keys and --start the watcher    sudo bash smbwatch.sh --install
+# Confirm removal of the cron entry and keys  sudo bash smbwatch.sh --uninstall
+# Start the watcher                           sudo bash smbwatch.sh --start
+# Stop the watcher                            sudo bash smbwatch.sh --stop
+# Report whether the watcher runs             sudo bash smbwatch.sh --status
 #
 # LOG: /var/log/smbwatch.log
 #
@@ -64,8 +65,9 @@ mkdir -p "$run_dir"
 pid_file="$run_dir/smbstack-smbwatch.pid"
 state_file="$run_dir/smbstack-smbwatch.state"
 
-# validation -- integer only; use directly with =~
+# validation -- use canonical validators directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
+UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 
 # ------------------------------------------------------------------------------
 # FUNCTIONS
@@ -190,12 +192,18 @@ handle_new_file() {
 # Move a new entry of the shared root that is not in WATCH_ROOT_ALLOW
 handle_root_entry() {
     local root_entry="$1" entry_name allowed_name dest_path
-    entry_name="$(basename "$root_entry")"
+    entry_name="${root_entry##*/}"
     # the recycle bin itself is never moved
     [ "$entry_name" = .recycle ] && return
-    for allowed_name in "${root_allow[@]}"; do
-        [ "$entry_name" = "$allowed_name" ] && return
-    done
+    if (
+        LC_ALL=C
+        [[ "$entry_name" =~ $UH_ENTRY_NAME ]] \
+            && (( ${#entry_name} <= 255 ))
+    ); then
+        for allowed_name in "${root_allow[@]}"; do
+            [ "$entry_name" = "$allowed_name" ] && return
+        done
+    fi
     [ -e "$root_entry" ] || [ -L "$root_entry" ] || return
 
     dest_path="$recycle_dir/$(date +%Y%m%d)"
@@ -253,7 +261,7 @@ load_smbstack_env "$smbstack_env" "$env_keys" || true
 #
 # Collect every failure first, then decide -- a single abort reports them all
 check_keys() {
-    local key_errors key_error env_key
+    local key_errors key_error env_key allowed_name allow_rest allow_index
     key_errors=()
     for env_key in SHARED_PATH WATCH_EXCLUDE; do
         if ! grep -q "^${env_key}=" "$smbstack_env"; then
@@ -272,12 +280,32 @@ check_keys() {
          || [ "$WATCH_LIMIT_GB" -gt 10000 ]; then
         key_errors+=("WATCH_LIMIT_GB invalid GB, expected 1 to 10000")
     fi
+    root_allow=()
+    if [[ -n "${WATCH_ROOT_ALLOW:-}" ]]; then
+        allow_rest="$WATCH_ROOT_ALLOW"
+        allow_index=1
+        while true; do
+            allowed_name="${allow_rest%%,*}"
+            if ! (
+                LC_ALL=C
+                [[ "$allowed_name" =~ $UH_ENTRY_NAME ]] \
+                    && (( ${#allowed_name} <= 255 ))
+            ); then
+                key_errors+=("WATCH_ROOT_ALLOW entry $allow_index invalid name")
+                break
+            fi
+            root_allow+=("$allowed_name")
+            [[ "$allow_rest" == *,* ]] || break
+            allow_rest="${allow_rest#*,}"
+            allow_index=$((allow_index + 1))
+        done
+    fi
     if (( ${#key_errors[@]} > 0 )); then
         for key_error in "${key_errors[@]}"; do
             log "WARNING: $key_error -alert"
         done
-        log "ERROR: ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env")"
-        log "ERROR: run '$(basename "$0") --install' first -abort"
+        log "ERROR: [1/2] ${#key_errors[@]} key(s) invalid in $(basename "$smbstack_env")"
+        log "ERROR: [2/2] run '$(basename "$0") --install' first -abort"
         exit 1
     fi
 }
@@ -479,12 +507,6 @@ start() (
 
     # Root guard: off while WATCH_ROOT_ALLOW is empty or missing
     root_path="${SHARED_PATH%/}"
-    root_allow=()
-    IFS=',' read -ra allow_list <<< "${WATCH_ROOT_ALLOW:-}"
-    for allowed_name in "${allow_list[@]}"; do
-        allowed_name="${allowed_name#"${allowed_name%%[![:space:]]*}"}" ; allowed_name="${allowed_name%"${allowed_name##*[![:space:]]}"}"
-        [ -n "$allowed_name" ] && root_allow+=("$allowed_name")
-    done
 
     printf '%s\n' "${watch_dirs[@]}" > "$state_file"
 
@@ -503,7 +525,7 @@ start() (
                 || log "WARNING: allowed but not in root: $allowed_name -alert"
         done
         while IFS= read -r -d '' root_entry; do
-            entry_name="$(basename "$root_entry")"
+            entry_name="${root_entry##*/}"
             [ "$entry_name" = .recycle ] && continue
             is_allowed=0
             for allowed_name in "${root_allow[@]}"; do
@@ -528,12 +550,12 @@ start() (
     # The root watcher is not recursive and shares the pipe, so --stop ends
     # both watchers with the same process group.
     {
-        inotifywait -m -r -e create -e close_write -e moved_to --format '%e|%w%f' "${watch_dirs[@]}" 202>&- 2>>"$log_file" &
+        inotifywait -m -r -e create -e close_write -e moved_to --no-newline --format '%e|%w%f%0' "${watch_dirs[@]}" 202>&- 2>>"$log_file" &
         if (( ${#root_allow[@]} > 0 )); then
-            inotifywait -m -e create -e close_write -e moved_to --format '%e|%w%f' "$root_path" 202>&- 2>>"$log_file" &
+            inotifywait -m -e create -e close_write -e moved_to --no-newline --format '%e|%w%f%0' "$root_path" 202>&- 2>>"$log_file" &
         fi
         wait
-    } | while IFS='|' read -r event_name new_file; do
+    } | while IFS='|' read -r -d '' event_name new_file; do
         # a folder moved into the root counts too; below the root it does not
         if [[ "${new_file%/*}" == "$root_path" ]]; then
             handle_root_entry "$new_file"

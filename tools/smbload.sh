@@ -7,7 +7,8 @@
 # FILE: tools/smbload.sh
 #
 # USAGE:
-# sudo bash smbload.sh    Run one check now
+# ACTION             COMMAND
+# Run one check now  sudo bash smbload.sh
 #
 # LOG: /var/log/smbload.log
 #
