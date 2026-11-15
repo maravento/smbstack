@@ -7,10 +7,10 @@
 # FILE: tools/smbbk.sh
 #
 # USAGE:
-# ACTION                                  COMMAND
-# Create a backup now                     sudo bash smbbk.sh
-# Register the @monthly cron entry        sudo bash smbbk.sh --install
-# Remove the cron entry (keeps archives)  sudo bash smbbk.sh --uninstall
+# COMMAND                         ACTION
+# sudo bash smbbk.sh              Create a backup now
+# sudo bash smbbk.sh --install    Register the @monthly cron entry
+# sudo bash smbbk.sh --uninstall  Remove the cron entry (keeps archives)
 #
 # LOG: /var/log/smbstack.log
 #

@@ -7,8 +7,8 @@
 # FILE: tools/smbstackenv.sh
 #
 # USAGE:
-# ACTION                            COMMAND
-# Load shared environment settings  source smbstackenv.sh
+# COMMAND                ACTION
+# source smbstackenv.sh  Load shared environment settings
 #
 ################################################################################
 

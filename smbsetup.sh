@@ -7,12 +7,12 @@
 # FILE: smbsetup.sh
 #
 # USAGE:
-# ACTION                        COMMAND
-# Fresh install                 sudo bash smbsetup.sh --install
-# Refresh code and permissions  sudo bash smbsetup.sh --update
-# Remove smbstack               sudo bash smbsetup.sh --uninstall
-# Report the current state      sudo bash smbsetup.sh --status
-# Interactive menu              sudo bash smbsetup.sh
+# COMMAND                            ACTION
+# sudo bash smbsetup.sh --install    Fresh install
+# sudo bash smbsetup.sh --update     Refresh code and permissions
+# sudo bash smbsetup.sh --uninstall  Remove smbstack
+# sudo bash smbsetup.sh --status     Report the current state
+# sudo bash smbsetup.sh              Interactive menu
 #
 # LOG: smbsetup.log, in this script's directory
 #

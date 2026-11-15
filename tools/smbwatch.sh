@@ -7,12 +7,12 @@
 # FILE: tools/smbwatch.sh
 #
 # USAGE:
-# ACTION                                      COMMAND
-# Ask for the keys and --start the watcher    sudo bash smbwatch.sh --install
-# Confirm removal of the cron entry and keys  sudo bash smbwatch.sh --uninstall
-# Start the watcher                           sudo bash smbwatch.sh --start
-# Stop the watcher                            sudo bash smbwatch.sh --stop
-# Report whether the watcher runs             sudo bash smbwatch.sh --status
+# COMMAND                            ACTION
+# sudo bash smbwatch.sh --install    Ask for the keys and --start the watcher
+# sudo bash smbwatch.sh --uninstall  Confirm removal of the cron entry and keys
+# sudo bash smbwatch.sh --start      Start the watcher
+# sudo bash smbwatch.sh --stop       Stop the watcher
+# sudo bash smbwatch.sh --status     Report whether the watcher runs
 #
 # LOG: /var/log/smbwatch.log
 #

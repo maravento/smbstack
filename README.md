@@ -14,16 +14,12 @@ FILE: README.md
     <td style="width: 50%; vertical-align: top;">
       <p>Many small and medium-sized businesses need to share files on their local network. They may also need to recover deleted files, review access records, manage files through a browser and control storage usage. Dedicated NAS devices often provide these functions, but their cost can be a barrier in some environments.</p>
       <p>One alternative is to use <strong>Samba</strong> on Linux. A standard installation lets you share files and folders; additional components are needed for the other functions.</p>
-      <p><strong>SMBstack</strong> provides part of this infrastructure using <strong>Samba</strong> on Ubuntu as its base.</p>
-      <p><strong>Samba</strong> remains responsible for file sharing and permission management. <strong>SMBstack</strong> adds a recycle bin with separate channels for each source, audit logging through <code>rsyslog</code>, a web panel with three views and a daily disk usage report.</p>
-      <p>In the background, <code>smbload</code> monitors the services, <code>smbwatch</code> enforces folder size limits and <code>smbbk</code> backs up the configuration.</p>
+      <p><strong>SMBstack</strong> provides part of this infrastructure using <strong>Samba</strong> as its base for file sharing and permission management. It adds a recycle bin with separate channels according to the origin of the files, audit logs, a web panel for viewing and managing files and a daily disk usage report. It also incorporates mechanisms to monitor services, control folder sizes and back up the configuration.</p>
     </td>
     <td style="width: 50%; vertical-align: top;">
       <p>Muchas pequeñas y medianas empresas necesitan compartir archivos en su red local. Además, pueden necesitar recuperar archivos eliminados, consultar los accesos, gestionar archivos desde un navegador y controlar el espacio utilizado. Estas funciones suelen ofrecerse en dispositivos NAS, cuyo costo puede ser una barrera en algunos entornos.</p>
       <p>Una alternativa es usar <strong>Samba</strong> en Linux. La instalación estándar permite compartir archivos y carpetas; para añadir las demás funciones se necesitan componentes adicionales.</p>
-      <p><strong>SMBstack</strong> proporciona parte de esta infraestructura utilizando <strong>Samba</strong> sobre Ubuntu como base.</p>
-      <p><strong>Samba</strong> sigue a cargo de compartir archivos y gestionar permisos. <strong>SMBstack</strong> añade una papelera con canales separados según el origen de los archivos, auditoría mediante <code>rsyslog</code>, un panel web con tres vistas y un informe diario de uso de disco.</p>
-      <p>En segundo plano, <code>smbload</code> supervisa los servicios, <code>smbwatch</code> controla el tamaño de las carpetas y <code>smbbk</code> crea respaldos de la configuración.</p>
+      <p><strong>SMBstack</strong> proporciona parte de esta infraestructura utilizando <strong>Samba</strong> como base para compartir archivos y gestionar permisos. Añade una papelera de reciclaje con canales separados según el origen de los archivos, registros de auditoría, un panel web para consultar y gestionar archivos y un informe diario de uso de disco. También incorpora mecanismos para supervisar los servicios, controlar el tamaño de las carpetas y respaldar la configuración.</p>
     </td>
   </tr>
 </table>

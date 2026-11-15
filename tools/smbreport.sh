@@ -7,10 +7,10 @@
 # FILE: tools/smbreport.sh
 #
 # USAGE:
-# ACTION                                    COMMAND
-# Build the report now                      sudo bash smbreport.sh
-# Register the daily cron entry             sudo bash smbreport.sh --install
-# Remove the cron entry (keeps the report)  sudo bash smbreport.sh --uninstall
+# COMMAND                             ACTION
+# sudo bash smbreport.sh              Build the report now
+# sudo bash smbreport.sh --install    Register the daily cron entry
+# sudo bash smbreport.sh --uninstall  Remove the cron entry (keeps the report)
 #
 # LOG: /var/log/smbstack.log
 #
