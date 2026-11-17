@@ -46,6 +46,10 @@ log() {
 }
 
 # dependencies
+if ! command -v awk >/dev/null 2>&1; then
+    log "ERROR: awk is not installed -abort"
+    exit 1
+fi
 for dep_pkg in inotify-tools procps coreutils findutils cron util-linux sed grep; do
     if [[ "$(dpkg-query -W -f='${Status}' "$dep_pkg" 2>/dev/null)" != *"ok installed"* ]]; then
         log "ERROR: dependency '$dep_pkg' is not installed -abort"
@@ -400,7 +404,7 @@ install_module() {
         # default: DEMO from smbsetup.sh plus two samples of the format;
         # an existing line is kept
         if ! grep -q '^WATCH_ROOT_ALLOW=' "$smbstack_env"; then
-            set_env_var "WATCH_ROOT_ALLOW" "DEMO,DEMO2,demo.url"
+            set_env_var "WATCH_ROOT_ALLOW" "DEMO,DEMO2,demo.url,.Trash-1000,.recycle,System Volume Information"
             log "INFO: root allow set to samples; edit $(basename "$smbstack_env")"
         fi
 

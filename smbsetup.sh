@@ -56,6 +56,7 @@ check_requirements() {
     case "$1" in
         install)
             check_already_installed
+            confirm_install_replacements
             require_static_lan_candidate
             check_conflicts "web server" nginx lighttpd caddy
             check_conflicts "SMB server" ksmbd-tools
@@ -156,7 +157,7 @@ info "using local user: $local_user"
 # dependencies
 # Every package the deployed components need. Installed by install_deps
 # in --install and --update.
-apt_deps=(python3-yaml apache2-utils libapache2-mod-php php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils)
+apt_deps=(python3-yaml apache2-utils libapache2-mod-php php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils diffutils)
 
 # ------------------------------------------------------------------------------
 # VARIABLES
@@ -396,8 +397,8 @@ update_stop_service() {
     systemctl stop "$unit" || update_error "cannot stop service: $unit"
     state=$(systemctl show -p ActiveState --value "$unit") || update_error "cannot inspect stopped: $unit"
     [ "$state" = inactive ] || {
-        log "ERROR: $unit state: $state"
-        update_error "$unit did not stop"
+        log "ERROR: [1/2] $unit state: $state"
+        update_error "[2/2] $unit did not stop"
     }
 }
 
@@ -454,8 +455,8 @@ update_resume() {
         systemctl start "$unit" || update_error "cannot start service: $unit"
         state=$(systemctl show -p ActiveState --value "$unit") || update_error "cannot inspect started: $unit"
         [ "$state" = active ] || {
-            log "ERROR: $unit state: $state"
-            update_error "$unit did not start"
+            log "ERROR: [1/2] $unit state: $state"
+            update_error "[2/2] $unit did not start"
         }
     done
     for script in "${update_daemons[@]}"; do
@@ -539,7 +540,7 @@ cron_d_write() (
 register_project_cron() {
     local shared_path="$1"
     local -a project_cron_lines=(
-        "@weekly root find \"$shared_path/.recycle/\" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1"
+        "@weekly root find \"$shared_path/.recycle/\" -depth -mindepth 2 -mtime +6 -delete >/dev/null 2>&1"
         "@daily root find /var/www/smbstack/.size_cache -name \"*.cache\" -mmin +60 -delete >/dev/null 2>&1"
         "*/5 * * * * root $smbstack_tools/smbload.sh"
         "@monthly root $smbstack_tools/smbbk.sh"
@@ -664,6 +665,8 @@ select_shared_folder() {
         || warn "cannot set ACL on $(basename "/home/$local_user") -alert"
 
     if [ -d "$share_dir" ]; then
+        echo "Shared folder already exists: $share_dir"
+        echo "Checking its permissions; existing files are kept."
         actual_owner=$(stat -c "%U" "$share_dir")
         actual_group=$(stat -c "%G" "$share_dir")
         actual_mode=$(stat -c "%a" "$share_dir")
@@ -876,7 +879,7 @@ install_deps() {
 # Select an existing interface and one of its configured IPv4 addresses
 choose_lan_interface() {
     local preset_iface="${1:-}"
-    local iface_name iface_choice iface_index iface_addrs iface_state
+    local iface_name iface_choice iface_index iface_state
     local -a lan_candidates=()
     while IFS= read -r iface_name; do
         lan_candidates+=("$iface_name")
@@ -1139,46 +1142,68 @@ read_lan_ipv4() {
 # ------------------------------------------------------------------------------
 
 check_already_installed() {
-    local already_installed=0
-    local skip_reasons=""
-
-    if dpkg-query -W -f='${Status}' samba 2>/dev/null \
-        | grep -q "ok installed"; then
-        already_installed=1
-        skip_reasons+=" - Samba package is installed\n"
-    fi
-
-    if pdbedit -L 2>/dev/null | grep -q ":"; then
-        already_installed=1
-        skip_reasons+=" - Samba users already registered (pdbedit)\n"
-    fi
-
     if [ -f "$smbstack_env" ]; then
-        already_installed=1
-        skip_reasons+=" - smbstack.env already exists: $smbstack_env\n"
+        abort "SMBStack installed; use --update | --uninstall -abort"
     fi
+}
 
-    if [ -f "/etc/samba/smb.conf" ]; then
-        existing_share=""
-        [ -f "$smbstack_env" ] && { load_smbstack_env "$smbstack_env" "$env_keys"; existing_share="${SHARED_NAME:-}"; }
-        if [ -n "$existing_share" ] && grep -q "\[${existing_share}\]" /etc/samba/smb.conf 2>/dev/null; then
-            already_installed=1
-            skip_reasons+=" - smb.conf already configured: /etc/samba/smb.conf\n"
-        fi
+confirm_install_replacements() {
+    local existing_config answer
+    local -a existing_configs=()
+    for existing_config in /etc/samba/smb.conf /lib/systemd/system/smbd.service \
+        /etc/rsyslog.conf /etc/rsyslog.d/fullaudit.conf \
+        /etc/logrotate.d/samba /etc/logrotate.d/rsyslog \
+        /etc/apache2/ports.conf /etc/apache2/sites-available/smbweb.conf \
+        /etc/php/*/apache2/php.ini; do
+        [ ! -f "$existing_config" ] || existing_configs+=("$existing_config")
+    done
+    if (( ${#existing_configs[@]} == 0 )); then
+        return 0
     fi
+    echo "SMBStack will replace or modify these existing configurations:"
+    printf ' %s\n' "${existing_configs[@]}"
+    echo "Samba, Winbind, Apache and rsyslog services will be configured."
+    read -r -p "Continue with these changes? [y/N]: " answer || answer=""
+    case "${answer,,}" in
+        y|yes) ;;
+        *) info "installation cancelled"; exit 0 ;;
+    esac
+    for existing_config in "${existing_configs[@]}"; do
+        cp -p -- "$existing_config" "${existing_config}.bak" \
+            || abort "cannot back up $(basename "$existing_config") -abort"
+    done
+}
 
-    if [ "$already_installed" -eq 1 ]; then
-        echo ""
-        if [ -f "$smbstack_env" ]; then
-            err "SMBStack installed; use --update | --uninstall -abort"
-        else
-            err "Samba is already installed. remove -abort"
-        fi
-        echo ""
-        printf "%b" "$skip_reasons"
-        echo ""
-        exit 1
+configure_samba_account() {
+    local samba_users change_password="" smb_pass smb_pass2
+    samba_account="$local_user"
+    samba_users=$(pdbedit -L) || abort "cannot read Samba accounts -abort"
+    samba_account_created=true
+    if awk -F: -v name="$samba_account" '$1 == name {found=1} END {exit !found}' <<< "$samba_users"; then
+        samba_account_created=false
+        echo "Samba account already exists: $samba_account"
+        read -r -p "Change its password? [y/N]: " change_password || change_password=""
+        case "${change_password,,}" in
+            y|yes) ;;
+            *) echo "Existing Samba password kept."; return 0 ;;
+        esac
     fi
+    while true; do
+        IFS= read -r -s -p "Enter Samba password for $samba_account: " smb_pass \
+            || abort "cannot read Samba password -abort"
+        echo
+        if [ "${#smb_pass}" -lt 8 ]; then
+            echo "Password must be at least 8 characters. Try again"
+            continue
+        fi
+        IFS= read -r -s -p "Confirm password: " smb_pass2 \
+            || abort "cannot read Samba password confirmation -abort"
+        echo
+        [ "$smb_pass" = "$smb_pass2" ] && break
+        echo "Passwords do not match. Try again"
+    done
+    printf '%s\n%s\n' "$smb_pass" "$smb_pass" | smbpasswd -a -s "$samba_account" \
+        || abort "cannot set Samba password -abort"
 }
 
 # APACHE LOGROTATE
@@ -1251,14 +1276,15 @@ do_install() {
     usermod -aG sambashare "$local_user"
 
     # smbguest: dedicated unprivileged samba guest user
+    smbguest_created=false
     if ! id smbguest &>/dev/null; then
-        useradd -r -s /bin/false smbguest
+        useradd -r -s /bin/false smbguest \
+            || abort "cannot create smbguest -abort"
+        smbguest_created=true
+    else
+        echo "Existing system account smbguest will be reused."
     fi
     usermod -aG sambashare smbguest
-    # create samba password for smbguest (random, not used interactively)
-    smb_guest_pass=$(openssl rand -base64 16)
-    printf "%s\n%s\n" "$smb_guest_pass" "$smb_guest_pass" | smbpasswd -a -s smbguest
-    unset smb_guest_pass
     usermod -a -G sambashare www-data
 
     select_shared_folder
@@ -1298,16 +1324,12 @@ do_install() {
     fi
 
     # apache vhosts (both in smbweb.conf)
-    cp -f /etc/apache2/ports.conf{,.bak} &>/dev/null
     cp -f "$conf_dir/smbweb.conf" /etc/apache2/sites-available/smbweb.conf || abort "cannot deploy smbweb.conf -abort"
     a2ensite -q smbweb.conf
 
     # replace placeholders in deployed files (not in repo)
     for deploy_file in \
         /etc/apache2/sites-available/smbweb.conf \
-        "$smbstack_web/smbaudit.html" \
-        "$smbstack_web/smbapi.php" \
-        "$smbstack_web/smbaudit-diagnostic.php" \
         "$smbstack_web/smbshared.php"; do
         [ -f "$deploy_file" ] || continue
         escaped_user=$(printf '%s' "$local_user" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
@@ -1382,6 +1404,18 @@ EOF
     apply_smb_conf_placeholders
     apply_smb_conf_interfaces
 
+    local samba_users smb_guest_pass
+    samba_users=$(pdbedit -L) || abort "cannot read Samba accounts -abort"
+    smbguest_account_created=false
+    if ! awk -F: '$1 == "smbguest" {found=1} END {exit !found}' <<< "$samba_users"; then
+        smb_guest_pass=$(openssl rand -base64 16) \
+            || abort "cannot generate guest password -abort"
+        printf '%s\n%s\n' "$smb_guest_pass" "$smb_guest_pass" | smbpasswd -a -s smbguest \
+            || abort "cannot create guest Samba account -abort"
+        unset smb_guest_pass
+        smbguest_account_created=true
+    fi
+
     # veto list required by the include line in smb.conf. Open per rules.md 14:
     # smbd's per-connection child reads the include as the authenticated user.
     install -d -m 755 -o root -g root "$smbstack_acl"
@@ -1449,23 +1483,7 @@ EOF
         abort "restart smbd winbind rsyslog apache2 failed -abort"
     fi
 
-    # create Samba account for local user
-    samba_account="$local_user"
-    printf "\n"
-    info "Create Samba Password: $samba_account"
-    printf "\n"
-    while true; do
-        read -s -p "Enter Samba password for $samba_account: " smb_pass; echo
-        if [ "${#smb_pass}" -lt 8 ]; then
-            echo "Password must be at least 8 characters. Try again"
-            continue
-        fi
-        read -s -p "Confirm password: " smb_pass2; echo
-        [ "$smb_pass" = "$smb_pass2" ] && break
-        echo "Passwords do not match. Try again"
-    done
-    printf "%s\n%s\n" "$smb_pass" "$smb_pass" | smbpasswd -a -s "$samba_account"
-    unset smb_pass smb_pass2
+    configure_samba_account
 
     # TRUSTED_PROXIES: used by web/smbshared.php to decide whether the
     # CF-Connecting-IP / X-Forwarded-For headers can be trusted when
@@ -1499,6 +1517,9 @@ SERVER_IP=$detected_ip
 
 # Samba
 SMBNAME=$samba_account
+SMB_ACCOUNT_CREATED=$samba_account_created
+SMBGUEST_CREATED=$smbguest_created
+SMBGUEST_ACCOUNT_CREATED=$smbguest_account_created
 
 # Logs
 # MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
@@ -1614,7 +1635,7 @@ do_update() {
     apache2ctl configtest || update_error "Apache configuration invalid"
     local deploy_file escaped_user
     escaped_user=$(printf '%s' "$LOCAL_USER" | tr -d '\n' | sed 's/[&/\\|]/\\&/g')
-    for deploy_file in smbapi.php smbaudit.html smbaudit-diagnostic.php smbshared.php; do
+    for deploy_file in smbshared.php; do
         sed -i "s|your_user|$escaped_user|g; s|compartida|$SHARED_NAME|g" "$smbstack_web/$deploy_file" \
             || update_error "cannot configure file: $smbstack_web/$deploy_file"
     done
@@ -1629,6 +1650,18 @@ do_update() {
 # ------------------------------------------------------------------------------
 
 do_uninstall() {
+    [ -f "$smbstack_env" ] || abort "SMBStack is not installed -abort"
+    load_smbstack_env "$smbstack_env" "$env_keys" \
+        || abort "cannot read smbstack.env -abort"
+    local account_flag
+    for account_flag in SMB_ACCOUNT_CREATED SMBGUEST_CREATED SMBGUEST_ACCOUNT_CREATED; do
+        grep -q "^${account_flag}=" "$smbstack_env" \
+            || abort "$account_flag missing line -abort"
+        case "${!account_flag:-}" in
+            true|false) ;;
+            *) abort "$account_flag must be true or false -abort" ;;
+        esac
+    done
     local config_lock="/var/lock/smbstack-smbwatch-config.lock"
     if [[ -L "$config_lock" ]] \
         || ! (umask 077; : >> "$config_lock") \
@@ -1651,15 +1684,20 @@ do_uninstall() {
     uninstall_shared_path=""
     if [ -f "$smbstack_env" ]; then
         load_smbstack_env "$smbstack_env" "$env_keys"
-        if [ -n "${SMBNAME:-}" ]; then
+        if [ "$SMB_ACCOUNT_CREATED" = true ] && [ -n "${SMBNAME:-}" ]; then
             pdbedit -x "$SMBNAME" 2>/dev/null \
                 || warn "cannot remove Samba user $SMBNAME -alert"
         fi
         uninstall_shared_path="${SHARED_PATH:-}"
     fi
-    pdbedit -x smbguest 2>/dev/null || true
-    setfacl -x u:smbguest "/home/${LOCAL_USER:-$local_user}" 2>/dev/null || true
-    userdel smbguest 2>/dev/null || true
+    if [ "$SMBGUEST_ACCOUNT_CREATED" = true ]; then
+        pdbedit -x smbguest 2>/dev/null || true
+    fi
+    if [ "$SMBGUEST_CREATED" = true ]; then
+        setfacl -x u:smbguest "/home/${LOCAL_USER:-$local_user}" 2>/dev/null || true
+        userdel smbguest 2>/dev/null || true
+    fi
+    setfacl -x u:www-data "/home/${LOCAL_USER:-$local_user}" 2>/dev/null || true
 
     # apache sites
     a2dissite -q smbweb.conf &>/dev/null
@@ -1668,10 +1706,6 @@ do_uninstall() {
     # not to a specific IP.
     sed -i '/^Listen .*:3092$/d' /etc/apache2/ports.conf
     rm -f /etc/apache2/sites-available/smbweb.conf
-    # Not restored from ports.conf.bak on purpose: the lines above already
-    # remove exactly the lines the installer added, without touching
-    # anything else the admin may have added to ports.conf since install.
-    rm -f /etc/apache2/ports.conf.bak
 
     # Stop SMBwatch before removing the project configuration and cron file.
     [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" --stop 2>/dev/null || true
@@ -1697,7 +1731,7 @@ do_uninstall() {
     [ -f /etc/logrotate.d/rsyslog.bak ] && cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog
     rm -f /etc/logrotate.d/smbstack && info "Removed /etc/logrotate.d/smbstack"
     rm -f /etc/logrotate.d/smbwatch && info "Removed /etc/logrotate.d/smbwatch"
-    rm -f -- /var/log/smbstack.log /var/log/smbstack.log.* /var/log/smbwatch.log /var/log/smbwatch.log.* && info "Removed smbstack and smbwatch logs"
+    rm -f -- /var/log/smbstack.log /var/log/smbstack.log.* /var/log/smbwatch.log /var/log/smbwatch.log.* /var/log/smbload.log && info "Removed smbstack, smbwatch and smbload logs"
 
     # smb.conf
     [ -f /etc/samba/smb.conf.bak ] && cp -f /etc/samba/smb.conf.bak /etc/samba/smb.conf
@@ -1811,7 +1845,7 @@ show_menu() {
 # LOAD_CONF
 # Load the shared configuration reader
 source "$tools_dir/smbstackenv.sh"
-env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME SERVER_IP'
+env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME SERVER_IP SMB_ACCOUNT_CREATED SMBGUEST_CREATED SMBGUEST_ACCOUNT_CREATED'
 
 # ------------------------------------------------------------------------------
 # ACTIONS

@@ -91,7 +91,8 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
     <td style="width: 50%; vertical-align: top;">
       <strong>Important</strong>
       <ul>
-        <li>Fresh installation aborts if Samba or SMBStack is already installed. Samba alone must be removed first; an existing SMBStack installation requires <code>--update</code> or <code>--uninstall</code>. Otherwise, it installs Samba and replaces its generated <code>smb.conf</code> without prompting, keeping a <code>.bak</code> copy.</li>
+        <li>Fresh installation aborts if SMBStack is already installed. Existing Samba packages and accounts are reused. Before installing packages, the installer lists existing Samba, Apache/PHP, rsyslog and rotation configurations it will modify and asks for confirmation. No or Enter cancels; Yes saves adjacent <code>.bak</code> copies and continues.</li>
+        <li>An existing Samba account keeps its password unless the administrator chooses to change it. An existing shared folder is reported and its permissions are checked without replacing its contents. Uninstall removes only accounts created by SMBStack; reused accounts are preserved.</li>
         <li>The installer aborts if <code>nginx</code>, <code>lighttpd</code>, <code>caddy</code>, <code>ksmbd-tools</code> or <code>syslog-ng</code> are installed.</li>
         <li>The web panel listens on port <code>3092</code>, registered by <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">IANA</a> as Unassigned.</li>
       </ul>
@@ -99,7 +100,8 @@ The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `w
     <td style="width: 50%; vertical-align: top;">
       <strong>Importante</strong>
       <ul>
-        <li>La instalación nueva aborta si Samba o SMBStack ya están instalados. Si solo existe Samba, pide desinstalarlo primero; si existe SMBStack, indica usar <code>--update</code> o <code>--uninstall</code>. En caso contrario, instala Samba y reemplaza el <code>smb.conf</code> generado sin preguntar, conservando una copia <code>.bak</code>.</li>
+        <li>La instalación nueva aborta si SMBStack ya está instalado. Reutiliza los paquetes y cuentas existentes de Samba. Antes de instalar paquetes, enumera las configuraciones existentes de Samba, Apache/PHP, rsyslog y rotación que modificará y pide confirmación. No o Enter cancela; Sí guarda copias <code>.bak</code> junto a los originales y continúa.</li>
+        <li>Una cuenta Samba existente conserva su contraseña salvo que el administrador elija cambiarla. Si la compartida existe, informa y comprueba sus permisos sin reemplazar su contenido. La desinstalación elimina únicamente las cuentas creadas por SMBStack; conserva las reutilizadas.</li>
         <li>El instalador aborta si <code>nginx</code>, <code>lighttpd</code>, <code>caddy</code>, <code>ksmbd-tools</code> o <code>syslog-ng</code> están instalados.</li>
         <li>El panel web escucha en el puerto <code>3092</code>, registrado por <a href="https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt">IANA</a> como Sin asignar.</li>
       </ul>
@@ -305,8 +307,10 @@ sudo bash smbsetup.sh
 | `tools/smbreport.sh` | ✅ overwritten | ✅ removed (its cron entry is deregistered first) |
 | `tools/smbwatch.sh` | ✅ overwritten | ✅ removed |
 | `/etc/smbstack/smbstack.env` | ⛔ preserved | ✅ removed |
+| Logs `/var/log/smbstack.log`, `/var/log/smbwatch.log` and `/var/log/smbload.log` | ⛔ preserved | ✅ removed |
+| `www-data` ACL on the user's home | ⛔ preserved | ✅ removed |
 | Shared folder (`/home/$local_user/shared/`) | ⛔ never touched | ⛔ never touched |
-| Samba accounts of the administrator and `smbguest`, the `smbguest` system user and its ACL on the user's home | ⛔ preserved | ✅ removed |
+| Samba accounts of the administrator and `smbguest`, the `smbguest` system user and its ACL on the user's home | ⛔ preserved | Only accounts created by SMBStack are removed; the home ACL is removed only if SMBStack created the system user |
 | APT packages (Samba, Apache, PHP and the rest of the installer list) | ✅ missing ones installed | ⛔ preserved |
 
 > The shared folder is independent of the installer. To remove it, do so manually: `rm -rf /home/$local_user/shared`
@@ -408,7 +412,8 @@ sudo bash smbsetup.sh --status
 | `SMB_NET` | `smbsetup.sh` | LAN subnet in CIDR form allowed to reach the share | Subred LAN en formato CIDR autorizada a acceder al recurso |
 | `SMB_IFACE` | `smbsetup.sh` | Interface Samba binds to | Interfaz a la que se enlaza Samba |
 | `SERVER_IP` | `smbsetup.sh`, `smbshared.php` | Server's own IPv4 on that interface | IPv4 del servidor en esa interfaz |
-| `SMBNAME` | `smbsetup.sh` | Samba account created for the share | Cuenta de Samba creada para el recurso |
+| `SMBNAME` | `smbsetup.sh` | Samba account used for the share | Cuenta de Samba utilizada para el recurso |
+| `SMB_ACCOUNT_CREATED`, `SMBGUEST_CREATED`, `SMBGUEST_ACCOUNT_CREATED` | `smbsetup.sh` | Boolean ownership flags for the user's Samba account, the guest system account and the guest Samba account. Uninstall preserves accounts it did not create | Indicadores booleanos de creación de la cuenta Samba del usuario, la cuenta de sistema invitada y la cuenta Samba invitada. La desinstalación conserva las cuentas que no creó |
 | `SMBREPORT_TOP_ROWS`, `SMBREPORT_TOP_FILES` | `smbreport.sh` | Report ranking limits. Defaults: `30` rows and `50` files, written automatically without questions. Positive integers without leading zeros. Changing these defaults is not recommended. | Límites de los listados del informe. Valores iniciales: `30` filas y `50` archivos, escritos automáticamente sin preguntas. Enteros positivos sin ceros iniciales. No se recomienda modificarlos. |
 | `MAX_LOG_LINES` | `smbapi.php`, `smbaudit-diagnostic.php` | Maximum audit records returned by `smbapi.php` per request; default `50000`. It reads the current log and then up to seven `.gz` rotations until the limit is reached. The CLI diagnostic uses the same value for the current log. The audit viewer's own request uses a fixed limit in its JavaScript, so raising this does not change what the UI asks for | Máximo de registros de auditoría devueltos por `smbapi.php` por petición; valor predeterminado `50000`. Lee el log vigente y después hasta siete rotaciones `.gz` hasta alcanzar el límite. El diagnóstico CLI usa el mismo valor para el log vigente. La petición del visor usa un límite fijo en su JavaScript, así que subir esta clave no cambia lo que pide la interfaz |
 | `TRUSTED_PROXIES` | `smbshared.php` | IPv4 addresses, comma-separated, whose `REMOTE_ADDR` is trusted to carry the real client IP in a header; default `127.0.0.1` | Direcciones IPv4 separadas por comas cuyo `REMOTE_ADDR` se considera fiable para traer la IP real del cliente en un encabezado; valor predeterminado `127.0.0.1` |
@@ -598,7 +603,7 @@ recycle:noversions = *.dat,*.ini
 </table>
 
 ```bash
-@weekly root find "/home/$local_user/shared/.recycle/" -depth -mindepth 1 -mtime +6 -delete >/dev/null 2>&1
+@weekly root find "/home/$local_user/shared/.recycle/" -depth -mindepth 2 -mtime +6 -delete >/dev/null 2>&1
 ```
 
 <table width="100%">
@@ -853,7 +858,7 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 | Type | Description | Descripción |
 |---|---|---|
 | Project backup / Respaldo de proyecto | It is a copy of SMBstack's configuration intended for the administrator. It is stored in `/etc/bak/smbstack`, includes a timestamp in its name and up to three copies are kept.<br><br>Only `smbbk.sh` creates project backups. `smbsetup.sh --update` runs `smbbk.sh` before overwriting the application code, instead of keeping a copy of its own. | Es una copia de la configuración de SMBstack destinada al administrador. Se almacena en `/etc/bak/smbstack`, incluye una marca de tiempo en el nombre y se conservan hasta tres copias.<br><br>Solo `smbbk.sh` genera respaldos de proyecto. `smbsetup.sh --update` ejecuta `smbbk.sh` antes de sobrescribir el código de la aplicación, en lugar de mantener una copia propia. |
-| Routine-operation backup / Respaldo de operación rutinaria | It is the copy a script takes of one specific file right before modifying it, to allow the change to be undone. It is stored next to the original file with the `.bak` suffix, and only one copy is kept, overwritten on every run.<br><br>Some examples are `smb.conf.bak`, `ports.conf.bak` and `smbd.service.bak`. | Es una copia que un script realiza de un archivo concreto justo antes de modificarlo, para permitir deshacer el cambio. Se almacena junto al archivo original con el sufijo `.bak` y solo se conserva una copia, que se sobrescribe en cada ejecución.<br><br>Algunos ejemplos son `smb.conf.bak`, `ports.conf.bak` y `smbd.service.bak`. |
+| Routine-operation backup / Respaldo de operación rutinaria | It is the copy a script takes of one specific file right before modifying it, to allow the change to be undone. It is stored next to the original file with the `.bak` suffix, and only one copy is kept, overwritten on every run.<br><br>Some examples are `smb.conf.bak`, `rsyslog.conf.bak` and `smbd.service.bak`. | Es una copia que un script realiza de un archivo concreto justo antes de modificarlo, para permitir deshacer el cambio. Se almacena junto al archivo original con el sufijo `.bak` y solo se conserva una copia, que se sobrescribe en cada ejecución.<br><br>Algunos ejemplos son `smb.conf.bak`, `rsyslog.conf.bak` y `smbd.service.bak`. |
 
 ### Project logs
 
@@ -999,6 +1004,12 @@ EOF
     </td>
   </tr>
 </table>
+
+| Command | Description | Descripción |
+|---|---|---|
+| `sudo bash /etc/smbstack/tools/smbreport.sh` | Build the report now | Generar el informe ahora |
+| `sudo bash /etc/smbstack/tools/smbreport.sh --install` | Register the daily cron entry | Registrar la entrada diaria en cron |
+| `sudo bash /etc/smbstack/tools/smbreport.sh --uninstall` | Remove the cron entry, keeping the report | Quitar la entrada de cron, conservando el informe |
 
 [![smbreport](./img/smbreport.png)](https://github.com/maravento/smbstack)
 
