@@ -152,7 +152,6 @@ detect_local_user() {
 if ! local_user=$(detect_local_user); then
     abort "no local user; create one with sudo access -abort"
 fi
-info "using local user: $local_user"
 
 # dependencies
 # Every package the deployed components need. Installed by install_deps
@@ -1853,6 +1852,7 @@ env_keys='LOCAL_USER SHARED_NAME SHARED_PATH SMB_NET SMB_IFACE SMBNAME SERVER_IP
 
 # Run the action given on the command line, or fall back to the menu
 log "INFO: smbsetup start..."
+info "using local user: $local_user"
 
 case "${1:-}" in
     --install) do_install ;;

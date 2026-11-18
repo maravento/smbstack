@@ -192,6 +192,20 @@ handle_new_file() {
     fi
 }
 
+# SYSTEM NAME
+# True when a root name is in WATCH_ROOT_SYSTEM; a trailing * matches a prefix
+is_system_name() {
+    local entry_name="$1" system_name
+    for system_name in "${root_system[@]}"; do
+        if [[ "$system_name" == *\* ]]; then
+            [[ "$entry_name" == "${system_name%\*}"* ]] && return 0
+        else
+            [ "$entry_name" = "$system_name" ] && return 0
+        fi
+    done
+    return 1
+}
+
 # HANDLE ROOT ENTRY
 # Move a new entry of the shared root that is not in WATCH_ROOT_ALLOW
 handle_root_entry() {
@@ -199,6 +213,8 @@ handle_root_entry() {
     entry_name="${root_entry##*/}"
     # the recycle bin itself is never moved
     [ "$entry_name" = .recycle ] && return
+    # system folders of Windows, Linux, macOS and Android are never touched
+    is_system_name "$entry_name" && return
     if (
         LC_ALL=C
         [[ "$entry_name" =~ $UH_ENTRY_NAME ]] \
@@ -252,7 +268,7 @@ unset env_owner env_perms
 # LOAD_CONF
 # Read known key=value pairs from a config file, without sourcing it
 source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/smbstackenv.sh"
-env_keys='SHARED_PATH WATCH_LIMIT_GB WATCH_EXCLUDE WATCH_ROOT_ALLOW'
+env_keys='SHARED_PATH WATCH_LIMIT_GB WATCH_EXCLUDE WATCH_ROOT_ALLOW WATCH_ROOT_SYSTEM'
 
 # LOAD
 # Reads smbstack.env; a missing key is handled by the check below
@@ -266,8 +282,9 @@ load_smbstack_env "$smbstack_env" "$env_keys" || true
 # Collect every failure first, then decide -- a single abort reports them all
 check_keys() {
     local key_errors key_error env_key allowed_name allow_rest allow_index
+    local system_name system_rest system_index
     key_errors=()
-    for env_key in SHARED_PATH WATCH_EXCLUDE; do
+    for env_key in SHARED_PATH WATCH_EXCLUDE WATCH_ROOT_SYSTEM; do
         if ! grep -q "^${env_key}=" "$smbstack_env"; then
             key_errors+=("$env_key missing line")
         elif [[ -z "${!env_key:-}" ]]; then
@@ -302,6 +319,31 @@ check_keys() {
             [[ "$allow_rest" == *,* ]] || break
             allow_rest="${allow_rest#*,}"
             allow_index=$((allow_index + 1))
+        done
+    fi
+    # system names may be hidden or contain $; only a trailing * is a wildcard
+    root_system=()
+    if [[ -n "${WATCH_ROOT_SYSTEM:-}" ]]; then
+        system_rest="$WATCH_ROOT_SYSTEM"
+        system_index=1
+        while true; do
+            system_name="${system_rest%%,*}"
+            if ! (
+                LC_ALL=C
+                [[ "$system_name" =~ ^[[:graph:]]([[:print:]]*[[:graph:]])?$ ]] \
+                    && [[ "$system_name" != */* ]] \
+                    && [[ "${system_name%\*}" != *\** ]] \
+                    && [ -n "${system_name%\*}" ] \
+                    && [ "$system_name" != . ] && [ "$system_name" != .. ] \
+                    && (( ${#system_name} <= 255 ))
+            ); then
+                key_errors+=("WATCH_ROOT_SYSTEM entry $system_index invalid name")
+                break
+            fi
+            root_system+=("$system_name")
+            [[ "$system_rest" == *,* ]] || break
+            system_rest="${system_rest#*,}"
+            system_index=$((system_index + 1))
         done
     fi
     if (( ${#key_errors[@]} > 0 )); then
@@ -404,8 +446,13 @@ install_module() {
         # default: DEMO from smbsetup.sh plus two samples of the format;
         # an existing line is kept
         if ! grep -q '^WATCH_ROOT_ALLOW=' "$smbstack_env"; then
-            set_env_var "WATCH_ROOT_ALLOW" "DEMO,DEMO2,demo.url,.Trash-1000,.recycle,System Volume Information"
+            set_env_var "WATCH_ROOT_ALLOW" "DEMO,DEMO2,demo.url"
             log "INFO: root allow set to samples; edit $(basename "$smbstack_env")"
+        fi
+        # system folders that smbwatch never moves, measures or reports
+        if ! grep -q '^WATCH_ROOT_SYSTEM=' "$smbstack_env"; then
+            set_env_var "WATCH_ROOT_SYSTEM" '.Trash-*,System Volume Information,$RECYCLE.BIN,lost+found,.Trashes,.Spotlight-V100,.fseventsd,.TemporaryItems,LOST.DIR,.android_secure'
+            log "INFO: system folders set; edit $(basename "$smbstack_env")"
         fi
 
         if [ "$watch_header_added" -eq 1 ]; then
@@ -440,7 +487,7 @@ uninstall_module() (
         log "ERROR: cannot update $(basename "$smbstack_env") -abort"
         exit 1
     fi
-    if ! { sed '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d; /^WATCH_ROOT_ALLOW=/d' "$smbstack_env" \
+    if ! { sed '/^WATCH_LIMIT_GB=/d; /^WATCH_EXCLUDE=/d; /^WATCH_ROOT_ALLOW=/d; /^WATCH_ROOT_SYSTEM=/d' "$smbstack_env" \
             | sed -z 's/\n\n# =*\n# SMBWATCH (added by smbwatch.sh --install)\n# =*\n# =*\n/\n/' > "$env_tmp" \
         && chown --reference="$smbstack_env" -- "$env_tmp" \
         && chmod --reference="$smbstack_env" -- "$env_tmp" \
@@ -495,6 +542,7 @@ start() (
     while IFS= read -r -d '' shared_subdir; do
         dir_name="$(basename "$shared_subdir")"
         [[ "$dir_name" == .* ]] && continue
+        is_system_name "$dir_name" && continue
         is_excluded=0
         for excluded_name in "${exclude_list[@]}"; do
             excluded_name="${excluded_name#"${excluded_name%%[![:space:]]*}"}" ; excluded_name="${excluded_name%"${excluded_name##*[![:space:]]}"}"
@@ -521,6 +569,7 @@ start() (
         log "INFO: watching $(basename "$watch_dir")"
     done
     log "INFO: excluded: ${WATCH_EXCLUDE:-none}"
+    log "INFO: system names: ${#root_system[@]}"
     if (( ${#root_allow[@]} > 0 )); then
         log "INFO: root guard on: ${#root_allow[@]} allowed name(s)"
         # a typo in the list or a stray entry already present is only reported
@@ -531,6 +580,7 @@ start() (
         while IFS= read -r -d '' root_entry; do
             entry_name="${root_entry##*/}"
             [ "$entry_name" = .recycle ] && continue
+            is_system_name "$entry_name" && continue
             is_allowed=0
             for allowed_name in "${root_allow[@]}"; do
                 [ "$entry_name" = "$allowed_name" ] && is_allowed=1 && break

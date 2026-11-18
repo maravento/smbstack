@@ -204,8 +204,6 @@ if (( ${#key_errors[@]} > 0 )); then
 fi
 unset key_errors key_error env_key
 
-log "INFO: using local user: $LOCAL_USER"
-
 backup_dir="/etc/bak/smbstack"
 if [[ "${BACKUP_DIR:-}" != "$backup_dir" ]] \
    || [[ "$(readlink -m -- "$backup_dir")" != "$backup_dir" ]]; then

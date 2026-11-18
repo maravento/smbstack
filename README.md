@@ -396,10 +396,10 @@ sudo bash smbsetup.sh --status
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbsetup.sh</code> writes the keys listed below during <strong>install</strong> and never overwrites the file on <strong>update</strong>. <code>smbwatch.sh --install</code> adds two more of its own, <code>WATCH_LIMIT_GB</code> and <code>WATCH_EXCLUDE</code>; see the smbwatch section.
+      <code>smbsetup.sh</code> writes the keys listed below during <strong>install</strong> and never overwrites the file on <strong>update</strong>. <code>smbwatch.sh --install</code> adds four more of its own, <code>WATCH_LIMIT_GB</code>, <code>WATCH_EXCLUDE</code>, <code>WATCH_ROOT_ALLOW</code> and <code>WATCH_ROOT_SYSTEM</code>; see the smbwatch section.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbsetup.sh</code> escribe las claves enumeradas abajo durante <strong>install</strong> y no sobrescribe el archivo en <strong>update</strong>. <code>smbwatch.sh --install</code> añade dos propias, <code>WATCH_LIMIT_GB</code> y <code>WATCH_EXCLUDE</code>; ver la sección de smbwatch.
+      <code>smbsetup.sh</code> escribe las claves enumeradas abajo durante <strong>install</strong> y no sobrescribe el archivo en <strong>update</strong>. <code>smbwatch.sh --install</code> añade cuatro propias, <code>WATCH_LIMIT_GB</code>, <code>WATCH_EXCLUDE</code>, <code>WATCH_ROOT_ALLOW</code> y <code>WATCH_ROOT_SYSTEM</code>; ver la sección de smbwatch.
     </td>
   </tr>
 </table>
@@ -732,16 +732,17 @@ sudo cat /etc/cron.d/smbstack
 | `WATCH_LIMIT_GB` | `10` | Size limit per monitored folder, in GB | Límite de tamaño por carpeta monitoreada, en GB |
 | `WATCH_EXCLUDE` | `NONE` | Comma-separated folder names excluded from monitoring (e.g. `FINANCE,LEGAL`) | Nombres de carpetas separados por comas excluidas del monitoreo |
 | `WATCH_ROOT_ALLOW` | `DEMO,DEMO2,demo.url` | Optional; `--install` writes `DEMO`, the folder created by `smbsetup.sh`, plus two samples of the format. Replace them with the real names. Comma-separated folders and files allowed in the share root (e.g. `FINANCE,LEGAL,SWIM.url`). Anything else that appears there is moved to the recycle bin. Names must be 1–255 ASCII characters: start with a letter or digit; then letters, digits, internal spaces, hyphens, underscores and dots. No trailing space or dot. Hidden names, non-ASCII characters, paths, wildcards and control characters are rejected. Separate names with commas, without surrounding spaces or empty entries. Matching is case-sensitive. An invalid list prevents startup; the warning identifies the entry number. Examples are not created automatically. Empty or missing: the root guard is off | Opcional; `--install` escribe `DEMO`, la carpeta que crea `smbsetup.sh`, y dos ejemplos del formato. Reemplázalos por los nombres reales. Carpetas y archivos separados por comas permitidos en la raíz del recurso (p. ej. `FINANCE,LEGAL,SWIM.url`). Todo lo demás que aparezca ahí se mueve a la papelera. Los nombres deben tener entre 1 y 255 caracteres ASCII: empezar por letra o número; después pueden contener letras, números, espacios internos, guiones, guiones bajos y puntos. No pueden terminar en espacio ni punto. Se rechazan nombres ocultos, caracteres no ASCII, rutas, comodines y caracteres de control. Separe los nombres con comas, sin espacios alrededor ni elementos vacíos. Se distinguen mayúsculas y minúsculas. Una lista inválida impide el arranque; el aviso identifica el número de elemento. Los ejemplos no se crean automáticamente. Vacía o ausente: la vigilancia de la raíz queda apagada |
+| `WATCH_ROOT_SYSTEM` | `.Trash-*,System Volume Information,$RECYCLE.BIN,lost+found,.Trashes,.Spotlight-V100,.fseventsd,.TemporaryItems,LOST.DIR,.android_secure` | Required; `--install` writes it. Comma-separated system folders of Windows, Linux, macOS and Android in the share root. smbwatch never moves, measures or reports them. Names may be hidden; a trailing `*` matches any name that starts with the text before it (e.g. `.Trash-*`). Paths, commas and control characters are rejected. Missing or empty: `--start` aborts | Obligatoria; `--install` la escribe. Carpetas de sistema de Windows, Linux, macOS y Android en la raíz del recurso, separadas por comas. smbwatch nunca las mueve, mide ni informa. Se admiten nombres ocultos; un `*` final coincide con cualquier nombre que empiece por el texto anterior (p. ej. `.Trash-*`). Se rechazan rutas, comas y caracteres de control. Ausente o vacía: `--start` aborta |
 
 #### Root guard
 
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      SMB clients cannot write in the share root, but the owner of the root and <code>root</code> can, for example a sync tool running on the server. With <code>WATCH_ROOT_ALLOW</code> set, the watcher moves any new folder or file of the root that is not in that list to <code>.recycle/smbwatch/&amp;lt;YYYYMMDD&amp;gt;/</code>. Entries already present at start are not moved; each one that is not in the list is reported with a <code>WARNING</code>. A listed name missing from the root, or an empty key, is reported too. <code>.recycle</code> is always allowed.<br><br>To add a new folder or file to the root: add its exact name to <code>WATCH_ROOT_ALLOW</code>, run <code>--stop</code> and <code>--start</code>, and then create it.
+      SMB clients cannot write in the share root, but the owner of the root and <code>root</code> can, for example a sync tool running on the server. With <code>WATCH_ROOT_ALLOW</code> set, the watcher moves any new folder or file of the root that is not in that list to <code>.recycle/smbwatch/&amp;lt;YYYYMMDD&amp;gt;/</code>. Entries already present at start are not moved; each one that is not in the list is reported with a <code>WARNING</code>. A listed name missing from the root, or an empty key, is reported too. <code>.recycle</code> is always allowed, and the names in <code>WATCH_ROOT_SYSTEM</code> are never moved or reported.<br><br>To add a new folder or file to the root: add its exact name to <code>WATCH_ROOT_ALLOW</code>, run <code>--stop</code> and <code>--start</code>, and then create it.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      Los clientes SMB no pueden escribir en la raíz del recurso, pero el dueño de la raíz y <code>root</code> sí, por ejemplo una herramienta de sincronización que corre en el servidor. Con <code>WATCH_ROOT_ALLOW</code> definida, el vigilante mueve a <code>.recycle/smbwatch/&amp;lt;AAAAMMDD&amp;gt;/</code> cualquier carpeta o archivo nuevo de la raíz que no esté en esa lista. Lo que ya existe al arrancar no se mueve; cada entrada que no esté en la lista se informa con un <code>WARNING</code>. También se informa un nombre de la lista que no exista en la raíz, o la clave vacía. <code>.recycle</code> siempre está permitida.<br><br>Para agregar una carpeta o archivo nuevo en la raíz: escribe su nombre exacto en <code>WATCH_ROOT_ALLOW</code>, ejecuta <code>--stop</code> y <code>--start</code>, y luego créalo.
+      Los clientes SMB no pueden escribir en la raíz del recurso, pero el dueño de la raíz y <code>root</code> sí, por ejemplo una herramienta de sincronización que corre en el servidor. Con <code>WATCH_ROOT_ALLOW</code> definida, el vigilante mueve a <code>.recycle/smbwatch/&amp;lt;AAAAMMDD&amp;gt;/</code> cualquier carpeta o archivo nuevo de la raíz que no esté en esa lista. Lo que ya existe al arrancar no se mueve; cada entrada que no esté en la lista se informa con un <code>WARNING</code>. También se informa un nombre de la lista que no exista en la raíz, o la clave vacía. <code>.recycle</code> siempre está permitida, y los nombres de <code>WATCH_ROOT_SYSTEM</code> nunca se mueven ni se informan.<br><br>Para agregar una carpeta o archivo nuevo en la raíz: escribe su nombre exacto en <code>WATCH_ROOT_ALLOW</code>, ejecuta <code>--stop</code> y <code>--start</code>, y luego créalo.
     </td>
   </tr>
 </table>
@@ -773,8 +774,9 @@ sudo cat /etc/cron.d/smbstack
 #### Commands
 
 ```bash
-# Install (interactive: asks for the two keys, writes them, adds the @reboot
-# cron entry and starts the watcher). Run this once, from a terminal.
+# Install (interactive: asks for the limit and the exclusions, writes the four
+# WATCH keys, adds the @reboot cron entry and starts the watcher). Run this
+# once, from a terminal.
 sudo /etc/smbstack/tools/smbwatch.sh --install
 
 # Start
@@ -786,7 +788,7 @@ sudo /etc/smbstack/tools/smbwatch.sh --stop
 # Status (reports whether the watcher is running)
 sudo /etc/smbstack/tools/smbwatch.sh --status
 
-# Uninstall (asks for confirmation, stops it, removes the cron entry and both keys)
+# Uninstall (asks for confirmation, stops it, removes the cron entry and the four keys)
 sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 ```
 
@@ -804,11 +806,23 @@ sudo /etc/smbstack/tools/smbwatch.sh --uninstall
 </table>
 
 ```text
-2026-10-17 12:00:00 WARNING: WATCH_LIMIT_GB missing line -alert
 2026-10-17 12:00:00 WARNING: WATCH_EXCLUDE missing line -alert
-2026-10-17 12:00:00 ERROR: [1/2] 2 key(s) invalid in smbstack.env
+2026-10-17 12:00:00 WARNING: WATCH_ROOT_SYSTEM missing line -alert
+2026-10-17 12:00:00 WARNING: WATCH_LIMIT_GB missing line -alert
+2026-10-17 12:00:00 ERROR: [1/2] 3 key(s) invalid in smbstack.env
 2026-10-17 12:00:00 ERROR: [2/2] run 'smbwatch.sh --install' first -abort
 ```
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <strong>After an update.</strong> <code>smbsetup.sh --update</code> replaces <code>smbwatch.sh</code> but never edits <code>smbstack.env</code>. An installation made before <code>WATCH_ROOT_SYSTEM</code> existed lacks that key, so <code>--start</code> aborts and <code>smbload.sh</code> logs <code>smbwatch restart FAILED</code> every 5 minutes. Add the line to <code>/etc/smbstack/smbstack.env</code>, inside the SMBWATCH block, with the default value from the table above. Then run <code>smbwatch.sh --start</code>, or wait for <code>smbload.sh</code> to start it. Running <code>smbwatch.sh --install</code> also adds the key, but asks again for the limit and the exclusions.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <strong>Después de una actualización.</strong> <code>smbsetup.sh --update</code> reemplaza <code>smbwatch.sh</code> pero nunca edita <code>smbstack.env</code>. Una instalación hecha antes de que existiera <code>WATCH_ROOT_SYSTEM</code> no tiene esa clave, así que <code>--start</code> aborta y <code>smbload.sh</code> registra <code>smbwatch restart FAILED</code> cada 5 minutos. Agrega la línea a <code>/etc/smbstack/smbstack.env</code>, dentro del bloque SMBWATCH, con el valor por defecto de la tabla anterior. Luego ejecuta <code>smbwatch.sh --start</code>, o espera a que <code>smbload.sh</code> lo arranque. Ejecutar <code>smbwatch.sh --install</code> también añade la clave, pero vuelve a preguntar el límite y las exclusiones.
+    </td>
+  </tr>
+</table>
 
 ```text
 2026-10-17 12:00:00 INFO: Stopping smbwatch...
