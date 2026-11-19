@@ -49,7 +49,7 @@ prompt_smb_net_iface() {
 
 check_requirements() {
     local network_command
-    for network_command in ip awk python3; do
+    for network_command in ip python3; do
         command -v "$network_command" >/dev/null 2>&1 \
             || abort "network command '$network_command' missing -abort"
     done
@@ -149,6 +149,9 @@ detect_local_user() {
     echo "$best_user"
 }
 
+for dep_cmd in awk grep; do
+    command -v "$dep_cmd" >/dev/null 2>&1 || abort "dependency '$dep_cmd' missing -abort"
+done
 if ! local_user=$(detect_local_user); then
     abort "no local user; create one with sudo access -abort"
 fi
@@ -156,7 +159,7 @@ fi
 # dependencies
 # Every package the deployed components need. Installed by install_deps
 # in --install and --update.
-apt_deps=(python3-yaml apache2-utils libapache2-mod-php php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils diffutils)
+apt_deps=(python3-yaml apache2 apache2-bin apache2-data apache2-doc apache2-utils libapache2-mod-php passwd libc-bin php php-cli logrotate acl openssl cron iproute2 sudo systemd util-linux zip python3 inotify-tools procps coreutils findutils sed grep rsyslog samba samba-common samba-common-bin smbclient winbind cifs-utils diffutils)
 
 # ------------------------------------------------------------------------------
 # VARIABLES
@@ -173,7 +176,7 @@ smbstack_tools="$smbstack_etc/tools"
 smbstack_acl="$smbstack_etc/acl"
 smbstack_env="$smbstack_etc/smbstack.env"
 
-# validation -- one variable per thing validated; use directly with =~
+# validation -one variable per thing validated; use directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
 UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
@@ -650,8 +653,7 @@ select_shared_folder() {
             [[ "$folder_answer" =~ $UH_ENTRY_NAME ]] \
                 && (( ${#folder_answer} <= 255 ))
         ); then
-            info "invalid folder name"
-            info "use ASCII letters, digits, spaces, ._-; max 255 -retry"
+            info "invalid name: A-Z a-z 0-9 space ._- max 255 -retry"
             folder_answer=""
         else
             break
@@ -719,29 +721,6 @@ select_shared_folder() {
             || warn "cannot set ACL on $(basename "$share_dir") -alert"
         setfacl -d -m mask::rwx "$share_dir" \
             || warn "cannot set ACL on $(basename "$share_dir") -alert"
-        # recycle bin
-        # Each channel is precreated and owned by its own writer, so no SMB
-        # client needs write access on .recycle itself. The direct mask blocks
-        # group write there; the default mask keeps it inside each channel.
-        mkdir -p "$share_dir/.recycle"
-        chown www-data:www-data "$share_dir/.recycle" \
-            || warn "cannot set owner and group: $(basename "$share_dir/.recycle") -alert"
-        chmod 755 "$share_dir/.recycle" \
-            || warn "cannot set permissions on $(basename "$share_dir/.recycle") -alert"
-        install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
-        install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
-        setfacl -m g:sambashare:rwx "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -d -m g:sambashare:rwx "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -m mask::r-x "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -d -m mask::rwx "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
-        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
     else
         sudo -u "$local_user" mkdir -p "$share_dir"
         chmod 755 "$share_dir" \
@@ -774,30 +753,30 @@ select_shared_folder() {
             || warn "cannot set ACL on $(basename "$share_dir") -alert"
         setfacl -d -m mask::rwx "$share_dir" \
             || warn "cannot set ACL on $(basename "$share_dir") -alert"
-        # recycle bin
-        # Each channel is precreated and owned by its own writer, so no SMB
-        # client needs write access on .recycle itself. The direct mask blocks
-        # group write there; the default mask keeps it inside each channel.
-        mkdir -p "$share_dir/.recycle"
-        chown www-data:www-data "$share_dir/.recycle" \
-            || warn "cannot set owner and group: $(basename "$share_dir/.recycle") -alert"
-        chmod 755 "$share_dir/.recycle" \
-            || warn "cannot set permissions on $(basename "$share_dir/.recycle") -alert"
-        install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
-        install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
-        setfacl -m g:sambashare:rwx "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -d -m g:sambashare:rwx "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -m mask::r-x "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -d -m mask::rwx "$share_dir/.recycle" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
-        setfacl -R -x g:sambashare "$share_dir/.recycle/www-data" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
-        setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data" \
-            || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
     fi
+    # recycle bin
+    # Each channel is precreated and owned by its own writer, so no SMB
+    # client needs write access on .recycle itself. The direct mask blocks
+    # group write there; the default mask keeps it inside each channel.
+    mkdir -p "$share_dir/.recycle"
+    chown www-data:www-data "$share_dir/.recycle" \
+        || warn "cannot set owner and group: $(basename "$share_dir/.recycle") -alert"
+    chmod 755 "$share_dir/.recycle" \
+        || warn "cannot set permissions on $(basename "$share_dir/.recycle") -alert"
+    install -d -o smbguest -g sambashare -m 2775 "$share_dir/.recycle/smbguest"
+    install -d -o www-data -g www-data -m 775 "$share_dir/.recycle/www-data"
+    setfacl -m g:sambashare:rwx "$share_dir/.recycle" \
+        || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+    setfacl -d -m g:sambashare:rwx "$share_dir/.recycle" \
+        || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+    setfacl -m mask::r-x "$share_dir/.recycle" \
+        || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+    setfacl -d -m mask::rwx "$share_dir/.recycle" \
+        || warn "cannot set ACL on $(basename "$share_dir/.recycle") -alert"
+    setfacl -R -x g:sambashare "$share_dir/.recycle/www-data" \
+        || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
+    setfacl -R -d -x g:sambashare "$share_dir/.recycle/www-data" \
+        || warn "cannot set ACL on $(basename "$share_dir/.recycle/www-data") -alert"
 
     echo "Shared folder: $share_dir"
     echo ""
@@ -1165,7 +1144,7 @@ confirm_install_replacements() {
     read -r -p "Continue with these changes? [y/N]: " answer || answer=""
     case "${answer,,}" in
         y|yes) ;;
-        *) info "installation cancelled"; exit 0 ;;
+        *) info "installation cancelled"; log "INFO: smbsetup done"; exit 0 ;;
     esac
     for existing_config in "${existing_configs[@]}"; do
         cp -p -- "$existing_config" "${existing_config}.bak" \
@@ -1187,19 +1166,22 @@ configure_samba_account() {
             *) echo "Existing Samba password kept."; return 0 ;;
         esac
     fi
-    while true; do
+    local pass_attempt
+    for pass_attempt in 1 2 3; do
         IFS= read -r -s -p "Enter Samba password for $samba_account: " smb_pass \
             || abort "cannot read Samba password -abort"
         echo
         if [ "${#smb_pass}" -lt 8 ]; then
-            echo "Password must be at least 8 characters. Try again"
+            [ "$pass_attempt" -lt 3 ] || abort "Samba password needs 8+ characters -abort"
+            info "password needs 8+ characters -retry"
             continue
         fi
         IFS= read -r -s -p "Confirm password: " smb_pass2 \
             || abort "cannot read Samba password confirmation -abort"
         echo
         [ "$smb_pass" = "$smb_pass2" ] && break
-        echo "Passwords do not match. Try again"
+        [ "$pass_attempt" -lt 3 ] || abort "Samba passwords do not match -abort"
+        info "passwords do not match -retry"
     done
     printf '%s\n%s\n' "$smb_pass" "$smb_pass" | smbpasswd -a -s "$samba_account" \
         || abort "cannot set Samba password -abort"
@@ -1254,6 +1236,9 @@ do_install() {
 
     # dependency check
     install_deps
+    # apache2-doc breaks after apache2 installs or upgrades; reinstall it always
+    retry_cmd "install packages" env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall apache2-doc \
+        || abort "cannot reinstall apache2-doc -abort"
 
     if ! systemctl is-active --quiet apache2; then
         err "[1/2] apache2 is not running"
@@ -1652,6 +1637,12 @@ do_uninstall() {
     [ -f "$smbstack_env" ] || abort "SMBStack is not installed -abort"
     load_smbstack_env "$smbstack_env" "$env_keys" \
         || abort "cannot read smbstack.env -abort"
+    local answer
+    read -r -p "Remove SMBStack? [y/N]: " answer || answer=""
+    case "${answer,,}" in
+        y|yes) ;;
+        *) info "uninstall cancelled"; log "INFO: smbsetup done"; exit 0 ;;
+    esac
     local account_flag
     for account_flag in SMB_ACCOUNT_CREATED SMBGUEST_CREATED SMBGUEST_ACCOUNT_CREATED; do
         grep -q "^${account_flag}=" "$smbstack_env" \
@@ -1689,13 +1680,8 @@ do_uninstall() {
         fi
         uninstall_shared_path="${SHARED_PATH:-}"
     fi
-    if [ "$SMBGUEST_ACCOUNT_CREATED" = true ]; then
-        pdbedit -x smbguest 2>/dev/null || true
-    fi
-    if [ "$SMBGUEST_CREATED" = true ]; then
-        setfacl -x u:smbguest "/home/${LOCAL_USER:-$local_user}" 2>/dev/null || true
-        userdel smbguest 2>/dev/null || true
-    fi
+    # smbguest stays, with its Samba account and home ACL: the preserved
+    # smb.conf still names it (guest account, force user). See the README.
     setfacl -x u:www-data "/home/${LOCAL_USER:-$local_user}" 2>/dev/null || true
 
     # apache sites
@@ -1709,12 +1695,6 @@ do_uninstall() {
     # Stop SMBwatch before removing the project configuration and cron file.
     [ -x "$smbstack_tools/smbwatch.sh" ] && "$smbstack_tools/smbwatch.sh" --stop 2>/dev/null || true
 
-    # smbbk.sh cron entry
-    [ -x "$smbstack_tools/smbbk.sh" ] && "$smbstack_tools/smbbk.sh" --uninstall || true
-
-    # smbreport.sh cron entry
-    [ -x "$smbstack_tools/smbreport.sh" ] && "$smbstack_tools/smbreport.sh" --uninstall || true
-
     # project web directory
     rm -rf "$smbstack_www"
 
@@ -1723,20 +1703,14 @@ do_uninstall() {
 
     # rsyslog
     rm -f /etc/rsyslog.d/fullaudit.conf
-    [ -f /etc/rsyslog.conf.bak ] && cp -f /etc/rsyslog.conf.bak /etc/rsyslog.conf
 
     # logrotate
-    [ -f /etc/logrotate.d/samba.bak ] && cp -f /etc/logrotate.d/samba.bak /etc/logrotate.d/samba
-    [ -f /etc/logrotate.d/rsyslog.bak ] && cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog
     rm -f /etc/logrotate.d/smbstack && info "Removed /etc/logrotate.d/smbstack"
     rm -f /etc/logrotate.d/smbwatch && info "Removed /etc/logrotate.d/smbwatch"
     rm -f -- /var/log/smbstack.log /var/log/smbstack.log.* /var/log/smbwatch.log /var/log/smbwatch.log.* /var/log/smbload.log && info "Removed smbstack, smbwatch and smbload logs"
 
-    # smb.conf
-    [ -f /etc/samba/smb.conf.bak ] && cp -f /etc/samba/smb.conf.bak /etc/samba/smb.conf
-
-    # smbd.service
-    [ -f /lib/systemd/system/smbd.service.bak ] && cp -f /lib/systemd/system/smbd.service.bak /lib/systemd/system/smbd.service
+    # smb.conf, rsyslog.conf, logrotate.d/samba and rsyslog and smbd.service
+    # stay as they are: they may hold user data. Their .bak copies remain.
 
     # cron entries
     rm -f /etc/cron.d/smbstack /etc/cron.d/smbstack.update-disabled

@@ -171,6 +171,11 @@ class SambaLogReader {
 
         $pattern = '/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+\S+\s+smbd_audit:\s+(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+)$/';
 
+        // rsyslog folds identical lines into "message repeated N times: [ ... ]"; keep one row
+        if (preg_match('/^(\S+\s+\S+\s+smbd_audit:\s+)message repeated \d+ times: \[ ?(.*)\]$/', $line, $r)) {
+            $line = $r[1] . $r[2];
+        }
+
         if (preg_match($pattern, $line, $matches)) {
             return [
                 'timestamp' => $matches[1],

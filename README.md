@@ -70,18 +70,20 @@ FILE: README.md
 
 ### Software
 
-- Apache2 and PHP (`apache2`, `apache2-utils`, `libapache2-mod-php`, `php`)
+- Apache2 and PHP (`apache2`, `apache2-bin`, `apache2-data`, `apache2-doc`, `apache2-utils`, `libapache2-mod-php`, `php`); `smbsetup.sh --install` then reinstalls `apache2-doc`
 - `rsyslog`, `logrotate`
-- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip`, `python3`, `python3-yaml` (checked by `smbsetup.sh`)
+- `acl`, `openssl`, `cron`, `iproute2`, `sudo`, `systemd`, `util-linux`, `zip`, `python3`, `python3-yaml`, `passwd`, `libc-bin`, `diffutils` (checked by `smbsetup.sh`)
 - `inotify-tools`, `procps`, `coreutils`, `findutils`, `cron`, `util-linux`, `sed`, `grep` (checked by `tools/smbwatch.sh`)
-- `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd` (checked by `tools/smbload.sh`)
-- `zip`, `coreutils`, `util-linux`, `cron` (checked by `tools/smbbk.sh`)
-- `findutils`, `coreutils`, `util-linux`, `cron`, `php-cli` (checked by `tools/smbreport.sh`)
+- `procps`, `samba`, `winbind`, `util-linux`, `coreutils`, `sed`, `systemd`, `grep` (checked by `tools/smbload.sh`)
+- `zip`, `coreutils`, `findutils`, `util-linux`, `cron`, `diffutils` (checked by `tools/smbbk.sh`)
+- `findutils`, `coreutils`, `util-linux`, `cron`, `php-cli`, `grep` (checked by `tools/smbreport.sh`)
 
 ```bash
-apt-get install -y apache2 apache2-utils libapache2-mod-php php rsyslog logrotate \
+apt-get install -y apache2 apache2-bin apache2-data apache2-doc apache2-utils \
+    libapache2-mod-php php rsyslog logrotate \
     acl openssl cron iproute2 sudo systemd util-linux sed grep inotify-tools \
-    procps coreutils findutils zip python3 python3-yaml
+    procps coreutils findutils zip python3 python3-yaml passwd libc-bin diffutils
+apt-get install -y --reinstall apache2-doc
 ```
 
 The Samba packages (`samba`, `samba-common`, `samba-common-bin`, `smbclient`, `winbind`, `cifs-utils`) are installed by `smbsetup.sh` itself.
@@ -291,7 +293,8 @@ sudo bash smbsetup.sh
 
 | File | `--update` | `--uninstall` |
 |------|-----------|---------------|
-| `conf/smb.conf` | ⛔ not touched (user-customized) | ✅ restored from `.bak` if it exists (only created when the installer overwrote a pre-existing `smb.conf`; on a fresh install, no `.bak` exists and `smb.conf` is left untouched) |
+| `conf/smb.conf` | ⛔ not touched (user-customized) | ⛔ preserved (contains user data); see the note below |
+| `/etc/rsyslog.conf`, `/etc/logrotate.d/samba`, `/etc/logrotate.d/rsyslog`, `/lib/systemd/system/smbd.service` | ⛔ not touched | ⛔ preserved; see the note below |
 | `conf/fullaudit.conf` | ⛔ not touched (user-customized) | ✅ removed |
 | `conf/smbweb.conf` | Preserved; VirtualHost ports set to `3092` / Conservado; puertos de VirtualHost ajustados a `3092` | ✅ removed |
 | `web/index.php` | ✅ overwritten | ✅ removed |
@@ -310,16 +313,35 @@ sudo bash smbsetup.sh
 | Logs `/var/log/smbstack.log`, `/var/log/smbwatch.log` and `/var/log/smbload.log` | ⛔ preserved | ✅ removed |
 | `www-data` ACL on the user's home | ⛔ preserved | ✅ removed |
 | Shared folder (`/home/$local_user/shared/`) | ⛔ never touched | ⛔ never touched |
-| Samba accounts of the administrator and `smbguest`, the `smbguest` system user and its ACL on the user's home | ⛔ preserved | Only accounts created by SMBStack are removed; the home ACL is removed only if SMBStack created the system user |
+| Administrator's Samba account | ⛔ preserved | ✅ removed only if SMBStack created it |
+| `smbguest` system user, its Samba account and its ACL on the user's home | ⛔ preserved | ⛔ preserved: the preserved `smb.conf` still uses it; see the note below |
 | APT packages (Samba, Apache, PHP and the rest of the installer list) | ✅ missing ones installed | ⛔ preserved |
 
-> The shared folder is independent of the installer. To remove it, do so manually: `rm -rf /home/$local_user/shared`
+#### Uninstall out of scope
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      <code>--uninstall</code> removes all of SMBStack, including <code>smbstack.env</code>. Samba and rsyslog stay, with <code>smb.conf</code>, <code>rsyslog.conf</code>, <code>logrotate.d/samba</code>, <code>logrotate.d/rsyslog</code> and <code>smbd.service</code> as SMBStack left them. The shared folder and the <code>smbguest</code> user also stay. They hold user data.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      <code>--uninstall</code> elimina todo SMBStack, incluido <code>smbstack.env</code>. Samba y rsyslog quedan, con <code>smb.conf</code>, <code>rsyslog.conf</code>, <code>logrotate.d/samba</code>, <code>logrotate.d/rsyslog</code> y <code>smbd.service</code> tal como los dejó SMBStack. También quedan la carpeta compartida y el usuario <code>smbguest</code>. Contienen datos del usuario.
+    </td>
+  </tr>
+</table>
+
+| Command | Description | Descripción |
+|---|---|---|
+| `sudo cp -f /etc/samba/smb.conf.bak /etc/samba/smb.conf`<br>`sudo cp -f /etc/logrotate.d/samba.bak /etc/logrotate.d/samba`<br>`sudo cp -f /lib/systemd/system/smbd.service.bak /lib/systemd/system/smbd.service`<br>`sudo systemctl daemon-reload && sudo systemctl restart smbd` | Keep Samba with its original files | Conservar Samba con sus archivos originales |
+| `sudo sed -i 's/\bsmbguest\b/NEW_USER/g' /etc/samba/smb.conf`<br>`sudo systemctl restart smbd` | Keep the current `smb.conf` and replace `smbguest` with another user | Conservar el `smb.conf` actual y reemplazar `smbguest` por otro usuario |
+| `sudo pdbedit -x smbguest`<br>`sudo setfacl -x u:smbguest /home/LOCAL_USER`<br>`sudo userdel smbguest` | Remove `smbguest`. The current `smb.conf` uses `smbguest` for guest access to the share. Before removing it, either restore the original `smb.conf` or replace `smbguest` with another user in `smb.conf`, so that `smb.conf` no longer uses it. If you remove it first, guest access to the share stops working | Eliminar `smbguest`. El `smb.conf` actual usa `smbguest` para el acceso de invitados a la compartida. Antes de eliminarlo, restaura el `smb.conf` original o reemplaza `smbguest` por otro usuario en `smb.conf`, para que `smb.conf` ya no lo use. Si lo eliminas antes, el acceso de invitados a la compartida deja de funcionar |
+| `sudo systemctl stop smbd nmbd winbind`<br>`sudo apt purge --auto-remove samba samba-common samba-common-bin smbclient winbind cifs-utils`<br>`sudo rm -rf /etc/samba /var/lib/samba /var/log/samba /var/cache/samba` | Remove Samba completely, with every Samba configuration, account and log on the server | Eliminar Samba por completo, con toda su configuración, cuentas y logs del servidor |
+| `sudo cp -f /etc/rsyslog.conf.bak /etc/rsyslog.conf`<br>`sudo cp -f /etc/logrotate.d/rsyslog.bak /etc/logrotate.d/rsyslog`<br>`sudo systemctl restart rsyslog` | Restore rsyslog. It is the system logger: restore it, do not remove it | Restaurar rsyslog. Es el registro del sistema: se restaura, no se elimina |
+| `sudo rm -rf /home/LOCAL_USER/shared` | Remove the shared folder and its data | Eliminar la carpeta compartida y sus datos |
+
+> A `.bak` exists only if the file existed before the installation. Replace `LOCAL_USER` with the owner of the shared folder and `NEW_USER` with the new user.
 >
-> La carpeta compartida es independiente del instalador. Para eliminarla, hazlo manualmente: `rm -rf /home/$local_user/shared`
->
-> `--uninstall` removes the project only. It never uninstalls APT packages: other projects and the system may share them.
->
-> `--uninstall` elimina solo el proyecto. Nunca desinstala paquetes APT, porque otros proyectos y el sistema pueden compartirlos.
+> Un `.bak` solo existe si el archivo existía antes de la instalación. Reemplaza `LOCAL_USER` por el dueño de la carpeta compartida y `NEW_USER` por el nuevo usuario.
 
 #### Backup
 
@@ -411,7 +433,7 @@ sudo bash smbsetup.sh --status
 | `SHARED_PATH` | `smbwatch.sh`, `smbreport.sh`, `smbshared.php` | Absolute path of the shared folder | Ruta absoluta de la carpeta compartida |
 | `SMB_NET` | `smbsetup.sh` | LAN subnet in CIDR form allowed to reach the share | Subred LAN en formato CIDR autorizada a acceder al recurso |
 | `SMB_IFACE` | `smbsetup.sh` | Interface Samba binds to | Interfaz a la que se enlaza Samba |
-| `SERVER_IP` | `smbsetup.sh`, `smbshared.php` | Server's own IPv4 on that interface | IPv4 del servidor en esa interfaz |
+| `SERVER_IP` | `smbsetup.sh`, `smbapi.php` | Server's own IPv4 on that interface. `smbapi.php` accepts it as an allowed CORS origin | IPv4 del servidor en esa interfaz. `smbapi.php` la acepta como origen CORS permitido |
 | `SMBNAME` | `smbsetup.sh` | Samba account used for the share | Cuenta de Samba utilizada para el recurso |
 | `SMB_ACCOUNT_CREATED`, `SMBGUEST_CREATED`, `SMBGUEST_ACCOUNT_CREATED` | `smbsetup.sh` | Boolean ownership flags for the user's Samba account, the guest system account and the guest Samba account. Uninstall preserves accounts it did not create | Indicadores booleanos de creación de la cuenta Samba del usuario, la cuenta de sistema invitada y la cuenta Samba invitada. La desinstalación conserva las cuentas que no creó |
 | `SMBREPORT_TOP_ROWS`, `SMBREPORT_TOP_FILES` | `smbreport.sh` | Report ranking limits. Defaults: `30` rows and `50` files, written automatically without questions. Positive integers without leading zeros. Changing these defaults is not recommended. | Límites de los listados del informe. Valores iniciales: `30` filas y `50` archivos, escritos automáticamente sin preguntas. Enteros positivos sin ceros iniciales. No se recomienda modificarlos. |
@@ -710,19 +732,19 @@ sudo cat /etc/cron.d/smbstack
 */5 * * * * root /etc/smbstack/tools/smbload.sh
 ```
 
-> `smbload.sh` reads no configuration of its own. It checks whether the watcher is running and calls `smbwatch.sh --start` if it is not. It skips that restart while `smbwatch.sh --install`, `smbwatch.sh --uninstall` or `smbsetup.sh --uninstall` holds the configuration lock. Until `smbwatch.sh --install` has been run from a terminal, that call aborts on its own key check, so `smbload.sh` logs a `-alert` warning pointing at `smbwatch.log`, where the missing or invalid key is named.
+> `smbload.sh` only reads whether `smbstack.env` contains `WATCH_LIMIT_GB` or `WATCH_EXCLUDE`. Without either key, that is, before `smbwatch.sh --install` has been run, it leaves the watcher alone. Otherwise it checks whether the watcher is running and calls `smbwatch.sh --start` if it is not. It skips that restart while `smbwatch.sh --install`, `smbwatch.sh --uninstall` or `smbsetup.sh --uninstall` holds the configuration lock. If `--start` fails, for example on an invalid key, `smbload.sh` logs a `-alert` warning pointing at `smbwatch.log`, where the failure is named.
 >
-> `smbload.sh` no lee configuración propia. Comprueba si el vigilante corre y llama a `smbwatch.sh --start` si no. Omite ese reinicio mientras `smbwatch.sh --install`, `smbwatch.sh --uninstall` o `smbsetup.sh --uninstall` retiene el bloqueo de configuración. Hasta que se haya ejecutado `smbwatch.sh --install` desde un terminal, esa llamada aborta en su propia verificación de claves, así que `smbload.sh` registra un aviso `-alert` que apunta a `smbwatch.log`, donde se nombra la clave que falta o es inválida.
+> `smbload.sh` solo lee si `smbstack.env` contiene `WATCH_LIMIT_GB` o `WATCH_EXCLUDE`. Sin ninguna de las dos, es decir, antes de ejecutar `smbwatch.sh --install`, no toca el vigilante. En otro caso comprueba si el vigilante corre y llama a `smbwatch.sh --start` si no. Omite ese reinicio mientras `smbwatch.sh --install`, `smbwatch.sh --uninstall` o `smbsetup.sh --uninstall` retiene el bloqueo de configuración. Si `--start` falla, por ejemplo por una clave inválida, `smbload.sh` registra un aviso `-alert` que apunta a `smbwatch.log`, donde se nombra el fallo.
 
 ### smbwatch
 
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbwatch.sh</code> monitors first-level subfolders and their contents in real time with <code>inotifywait</code>.<br><br>If a folder exceeds its configured size limit, a newly completed or moved-in file is moved to <code>.recycle/smbwatch/&amp;lt;YYYYMMDD&amp;gt;/</code>. This channel is separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code>. See <em>Recycle bin channels</em>.<br><br><code>smbwatch.sh</code> is managed independently of the installer, through five actions: <code>--install</code>, <code>--uninstall</code>, <code>--start</code>, <code>--stop</code> and <code>--status</code>.<br><br><code>--install</code> asks for the two values, registers the <code>@reboot</code> entry and starts the watcher. It requires an interactive terminal and is run once. <code>--uninstall</code> asks for confirmation before removing its cron entry, stopping the watcher and deleting the two values.<br><br><strong>Caution:</strong> Do not modify <code>smbstack.env</code> until SMBwatch removal finishes.<br><br><code>--start</code> never writes: it validates the keys and launches the watcher. If a key is missing or invalid it aborts, naming each failure and telling the operator to run <code>--install</code> first. This is the action cron runs on every boot, and the one <code>smbload.sh</code> uses to restart a stopped watcher.<br><br>The folder list is built once, when the watcher starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel are blocked at the share root. After creating one, run <code>--stop</code> and <code>--start</code> so the new folder is monitored.
+      <code>smbwatch.sh</code> monitors first-level subfolders and their contents in real time with <code>inotifywait</code>.<br><br>If a folder exceeds its configured size limit, a newly completed or moved-in file is moved to <code>.recycle/smbwatch/&amp;lt;YYYYMMDD&amp;gt;/</code>. This channel is separate from <code>.recycle/smbguest/</code> and <code>.recycle/www-data/</code>. See <em>Recycle bin channels</em>.<br><br><code>smbwatch.sh</code> is managed independently of the installer, through five actions: <code>--install</code>, <code>--uninstall</code>, <code>--start</code>, <code>--stop</code> and <code>--status</code>.<br><br><code>--install</code> asks for the two values, registers the <code>@reboot</code> entry and starts the watcher. It requires an interactive terminal and is run once. <code>--uninstall</code> asks for confirmation before removing its cron entry, stopping the watcher and deleting its four keys.<br><br><strong>Caution:</strong> Do not modify <code>smbstack.env</code> until SMBwatch removal finishes.<br><br><code>--start</code> never writes: it validates the keys and launches the watcher. If a key is missing or invalid it aborts, naming each failure and telling the operator to run <code>--install</code> first. This is the action cron runs on every boot, and the one <code>smbload.sh</code> uses to restart a stopped watcher.<br><br>The folder list is built once, when the watcher starts. First-level folders can only be created by the administrator from the server shell, since SMB clients and the web panel are blocked at the share root. After creating one, run <code>--stop</code> and <code>--start</code> so the new folder is monitored.
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <code>smbwatch.sh</code> vigila en tiempo real las carpetas de primer nivel y su contenido mediante <code>inotifywait</code>.<br><br>Si una carpeta supera el límite configurado, mueve a <code>.recycle/smbwatch/&amp;lt;AAAAMMDD&amp;gt;/</code> los archivos que acaban de terminar de escribirse o que acaban de llegar. Este canal es independiente de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code>. Consulta la sección <em>Recycle bin channels</em>.<br><br><code>smbwatch.sh</code> se administra de forma independiente del instalador, mediante cinco acciones: <code>--install</code>, <code>--uninstall</code>, <code>--start</code>, <code>--stop</code> y <code>--status</code>.<br><br><code>--install</code> solicita los dos valores, registra el inicio automático con <code>@reboot</code> y arranca el monitor. Requiere una terminal interactiva y se ejecuta una vez. <code>--uninstall</code> pide confirmación antes de eliminar la entrada de cron, detener el monitor y borrar esos dos valores.<br><br><strong>Advertencia:</strong> No modifiques <code>smbstack.env</code> hasta que termine la desinstalación de SMBwatch.<br><br><code>--start</code> nunca escribe: valida las claves y lanza el vigilante. Si falta una clave o es inválida, aborta nombrando cada fallo e indicando que se ejecute <code>--install</code> primero. Esta es la acción que cron ejecuta en cada arranque, y la que usa <code>smbload.sh</code> para reiniciar un vigilante detenido.<br><br>La lista de carpetas se construye una sola vez, al arrancar el vigilante. Las carpetas de primer nivel solo las crea el administrador desde la consola del servidor, porque los clientes SMB y el panel web no pueden escribir en la raíz del recurso. Después de crear una, ejecuta <code>--stop</code> y <code>--start</code> para que quede vigilada.
+      <code>smbwatch.sh</code> vigila en tiempo real las carpetas de primer nivel y su contenido mediante <code>inotifywait</code>.<br><br>Si una carpeta supera el límite configurado, mueve a <code>.recycle/smbwatch/&amp;lt;AAAAMMDD&amp;gt;/</code> los archivos que acaban de terminar de escribirse o que acaban de llegar. Este canal es independiente de <code>.recycle/smbguest/</code> y <code>.recycle/www-data/</code>. Consulta la sección <em>Recycle bin channels</em>.<br><br><code>smbwatch.sh</code> se administra de forma independiente del instalador, mediante cinco acciones: <code>--install</code>, <code>--uninstall</code>, <code>--start</code>, <code>--stop</code> y <code>--status</code>.<br><br><code>--install</code> solicita los dos valores, registra el inicio automático con <code>@reboot</code> y arranca el monitor. Requiere una terminal interactiva y se ejecuta una vez. <code>--uninstall</code> pide confirmación antes de eliminar la entrada de cron, detener el monitor y borrar sus cuatro claves.<br><br><strong>Advertencia:</strong> No modifiques <code>smbstack.env</code> hasta que termine la desinstalación de SMBwatch.<br><br><code>--start</code> nunca escribe: valida las claves y lanza el vigilante. Si falta una clave o es inválida, aborta nombrando cada fallo e indicando que se ejecute <code>--install</code> primero. Esta es la acción que cron ejecuta en cada arranque, y la que usa <code>smbload.sh</code> para reiniciar un vigilante detenido.<br><br>La lista de carpetas se construye una sola vez, al arrancar el vigilante. Las carpetas de primer nivel solo las crea el administrador desde la consola del servidor, porque los clientes SMB y el panel web no pueden escribir en la raíz del recurso. Después de crear una, ejecuta <code>--stop</code> y <code>--start</code> para que quede vigilada.
     </td>
   </tr>
 </table>

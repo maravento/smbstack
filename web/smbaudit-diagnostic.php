@@ -34,13 +34,13 @@ echo "=== SAMBA AUDIT LOG DIAGNOSTIC ===\n\n";
 
 // Check if file exists
 if (!file_exists($LOG_FILE)) {
-    echo "❌ ERROR: Log file does not exist: $LOG_FILE -abort\n";
+    echo date('Y-m-d H:i:s') . " ERROR: log.audit does not exist -abort\n";
     exit(1);
 }
 
 // Check if file is readable
 if (!is_readable($LOG_FILE)) {
-    echo "❌ ERROR: Cannot read log file: $LOG_FILE -abort\n";
+    echo date('Y-m-d H:i:s') . " ERROR: cannot read log.audit -abort\n";
     exit(1);
 }
 
@@ -81,13 +81,19 @@ $lineNumber = 0;
 while (!$file->eof()) {
     $lineNumber++;
     $line = trim($file->current());
+    // rsyslog folds identical lines into "message repeated N times: [ ... ]"
+    $repeat = 1;
+    if (preg_match('/^(\S+\s+\S+\s+smbd_audit:\s+)message repeated (\d+) times: \[ ?(.*)\]$/', $line, $r)) {
+        $line = $r[1] . $r[3];
+        $repeat = (int)$r[2];
+    }
 
     if (empty($line)) {
         $emptyLines++;
     } elseif (preg_match($pattern, $line, $matches)) {
         $parsedLines++;
         $action = trim($matches[5]);
-        $actions[$action] = ($actions[$action] ?? 0) + 1;
+        $actions[$action] = ($actions[$action] ?? 0) + $repeat;
     } else {
         $failedLines++;
         if (count($sampleFailedLines) < 5) {
@@ -132,7 +138,7 @@ echo "   - API reads from line: " . number_format($startLine) . " to " . number_
 echo "   - That's " . number_format(min($MAX_LOG_LINES, $totalLines)) . " lines being read by the API\n\n";
 
 if ($totalLines > $MAX_LOG_LINES) {
-    echo "⚠️  WARNING: Your log file has more than " . number_format($MAX_LOG_LINES) . " lines!\n";
+    echo date('Y-m-d H:i:s') . " WARNING: log.audit has more than " . number_format($MAX_LOG_LINES) . " lines -alert\n";
     echo "   The API only reads the last " . number_format($MAX_LOG_LINES) . " lines from the current file.\n";
     echo "   Older entries are not being read unless they're in rotated files.\n\n";
 }
@@ -143,6 +149,9 @@ $file->rewind();
 $lastEntries = [];
 while (!$file->eof()) {
     $line = trim($file->current());
+    if (preg_match('/^(\S+\s+\S+\s+smbd_audit:\s+)message repeated (\d+) times: \[ ?(.*)\]$/', $line, $r)) {
+        $line = $r[1] . $r[3];
+    }
     if (!empty($line) && preg_match($pattern, $line, $matches)) {
         $lastEntries[] = [
             'timestamp' => $matches[1],

@@ -69,7 +69,7 @@ mkdir -p "$run_dir"
 pid_file="$run_dir/smbstack-smbwatch.pid"
 state_file="$run_dir/smbstack-smbwatch.state"
 
-# validation -- use canonical validators directly with =~
+# validation -use canonical validators directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
 UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 
@@ -372,7 +372,7 @@ lock_watch_config() {
     flock -n -E 75 202 || lock_status=$?
     if (( lock_status != 0 )); then
         if [[ "${1:-}" == start && "$lock_status" == 75 ]]; then
-            printf '%s INFO: SMBwatch configuration busy; retry later -retry\n' \
+            printf '%s INFO: SMBwatch configuration busy -skip\n' \
                 "$(date '+%Y-%m-%d %H:%M:%S')" >&2
             exit 75
         fi
