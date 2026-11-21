@@ -176,7 +176,7 @@ smbstack_tools="$smbstack_etc/tools"
 smbstack_acl="$smbstack_etc/acl"
 smbstack_env="$smbstack_etc/smbstack.env"
 
-# validation -one variable per thing validated; use directly with =~
+# validation - one variable per thing validated; use directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
 UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
@@ -1191,18 +1191,40 @@ configure_samba_account() {
 # Apache keeps 14 rotations by default; the projects keep 7
 set_apache_logrotate() {
     local apache_rotate="/etc/logrotate.d/apache2"
-    [ -f "$apache_rotate" ] || { warn "apache2 has no logrotate file -alert"; return 0; }
-    if grep -qE '^[[:space:]]*rotate[[:space:]]+7$' "$apache_rotate"; then
-        info "${apache_rotate#/etc/} already rotate 7 -skip"
+    # Replaced, not edited; the package rotation and reload are kept.
+    if [ -f "$apache_rotate" ]; then
+        cp -f "$apache_rotate" "$apache_rotate.bak" \
+            || { warn "cannot back up ${apache_rotate#/etc/} -alert"; return 0; }
+    fi
+    if ! cat > "$apache_rotate" <<'EOF'
+/var/log/apache2/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 640 root adm
+    sharedscripts
+    prerotate
+        if [ -d /etc/logrotate.d/httpd-prerotate ]; then
+            run-parts /etc/logrotate.d/httpd-prerotate
+        fi
+    endscript
+    postrotate
+        if pgrep -f ^/usr/sbin/apache2 > /dev/null; then
+            invoke-rc.d apache2 reload 2>&1 | logger -t apache2.logrotate
+        fi
+    endscript
+}
+EOF
+    then
+        warn "cannot write ${apache_rotate#/etc/} -alert"
         return 0
     fi
-    cp -f "$apache_rotate"{,.bak} &>/dev/null || true
-    sed -i -E 's/^([[:space:]]*)rotate[[:space:]]+[0-9]+$/\1rotate 7/' "$apache_rotate"
-    if grep -qE '^[[:space:]]*rotate[[:space:]]+7$' "$apache_rotate"; then
-        info "${apache_rotate#/etc/} set to rotate 7 -fixed"
-    else
-        warn "cannot set rotate 7 in ${apache_rotate#/etc/} -alert"
-    fi
+    chown root:root "$apache_rotate" && chmod 644 "$apache_rotate" \
+        || { warn "cannot set ${apache_rotate#/etc/} permissions -alert"; return 0; }
+    info "${apache_rotate#/etc/} replaced, previous kept as .bak -fixed"
 }
 
 install_project_logrotate() {
@@ -1414,11 +1436,48 @@ EOF
     chown root:root /etc/rsyslog.d/fullaudit.conf
     usermod -a -G adm www-data
 
-    cp -f /etc/logrotate.d/rsyslog{,.bak} &>/dev/null
-    grep -qE '^[[:space:]]*create 0644 syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
-        sed -i '/sharedscripts/a \ create 0644 syslog adm' /etc/logrotate.d/rsyslog
-    grep -qE '^[[:space:]]*su syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
-        sed -i '/^{$/a \	su syslog adm' /etc/logrotate.d/rsyslog
+    # Replaced, not edited: repeated runs piled up duplicate su and create
+    # lines. The previous file is kept as .bak in the same path.
+    if [ -f /etc/logrotate.d/rsyslog ]; then
+        cp -f /etc/logrotate.d/rsyslog /etc/logrotate.d/rsyslog.bak \
+            || warn "cannot back up logrotate.d/rsyslog -alert"
+    fi
+    if cat > /etc/logrotate.d/rsyslog <<'EOF'
+/var/log/syslog
+/var/log/messages
+/var/log/daemon.log
+/var/log/debug
+/var/log/mail.info
+/var/log/mail.warn
+/var/log/mail.err
+/var/log/mail.log
+/var/log/kern.log
+/var/log/auth.log
+/var/log/user.log
+/var/log/lpr.log
+/var/log/cron.log
+{
+    su syslog adm
+    rotate 4
+    weekly
+    missingok
+    notifempty
+    compress
+    delaycompress
+    sharedscripts
+    create 0644 syslog adm
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+EOF
+    then
+        chown root:root /etc/logrotate.d/rsyslog
+        chmod 644 /etc/logrotate.d/rsyslog
+        info "logrotate.d/rsyslog replaced, previous kept as .bak -fixed"
+    else
+        warn "cannot write logrotate.d/rsyslog -alert"
+    fi
 
     if ! logrotate -d /etc/logrotate.d/samba >/dev/null 2>&1; then
         warn "logrotate: samba config check failed -alert"
