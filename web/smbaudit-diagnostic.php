@@ -38,8 +38,9 @@ if (!file_exists($LOG_FILE)) {
     exit(1);
 }
 
-// Check if file is readable
-if (!is_readable($LOG_FILE)) {
+// Open the log
+$handle = @fopen($LOG_FILE, 'r');
+if ($handle === false) {
     echo date('Y-m-d H:i:s') . " ERROR: cannot read log.audit -abort\n";
     exit(1);
 }
@@ -48,20 +49,6 @@ if (!is_readable($LOG_FILE)) {
 $fileSize = filesize($LOG_FILE);
 echo "📄 File: $LOG_FILE\n";
 echo "📊 File size: " . number_format($fileSize) . " bytes (" . round($fileSize/1024/1024, 2) . " MB)\n\n";
-
-// Count total lines
-$totalLines = 0;
-$handle = fopen($LOG_FILE, 'r');
-while (!feof($handle)) {
-    $chunk = fread($handle, 8192);
-    if ($chunk === false) break;
-    $totalLines += substr_count($chunk, "\n");
-}
-fclose($handle);
-
-$file = new SplFileObject($LOG_FILE);
-
-echo "📝 Total lines in file: " . number_format($totalLines) . "\n\n";
 
 // Parse pattern
 $pattern = '/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})\s+\S+\s+smbd_audit:\s+(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+?)\|(.+)$/';
@@ -75,12 +62,11 @@ $actions = [];
 
 echo "🔍 Analyzing log entries...\n";
 
-$file->rewind();
 $lineNumber = 0;
 
-while (!$file->eof()) {
+while (($raw = fgets($handle)) !== false) {
     $lineNumber++;
-    $line = trim($file->current());
+    $line = trim($raw);
     // rsyslog folds identical lines into "message repeated N times: [ ... ]"
     $repeat = 1;
     if (preg_match('/^(\S+\s+\S+\s+smbd_audit:\s+)message repeated (\d+) times: \[ ?(.*)\]$/', $line, $r)) {
@@ -104,10 +90,12 @@ while (!$file->eof()) {
         }
     }
 
-    $file->next();
 }
 
-echo "\n📊 RESULTS:\n";
+$totalLines = $lineNumber;
+echo "📝 Total lines in file: " . number_format($totalLines) . "\n\n";
+
+echo "📊 RESULTS:\n";
 echo "✅ Successfully parsed: " . number_format($parsedLines) . " lines\n";
 echo "❌ Failed to parse: " . number_format($failedLines) . " lines\n";
 echo "⚪ Empty lines: " . number_format($emptyLines) . " lines\n";
@@ -145,10 +133,10 @@ if ($totalLines > $MAX_LOG_LINES) {
 
 // Show last few entries
 echo "📋 Last 3 parsed entries:\n";
-$file->rewind();
+rewind($handle);
 $lastEntries = [];
-while (!$file->eof()) {
-    $line = trim($file->current());
+while (($raw = fgets($handle)) !== false) {
+    $line = trim($raw);
     if (preg_match('/^(\S+\s+\S+\s+smbd_audit:\s+)message repeated (\d+) times: \[ ?(.*)\]$/', $line, $r)) {
         $line = $r[1] . $r[3];
     }
@@ -163,8 +151,9 @@ while (!$file->eof()) {
             array_shift($lastEntries);
         }
     }
-    $file->next();
 }
+
+fclose($handle);
 
 foreach ($lastEntries as $entry) {
     echo "\n   {$entry['timestamp']} | {$entry['ip']} | {$entry['action']}\n";

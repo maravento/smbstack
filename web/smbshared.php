@@ -157,6 +157,7 @@ if (!$full_path
 $request = $full_path === $base_real
     ? ''
     : substr($full_path, strlen($base_real) + 1);
+$in_subdir = $request !== '';
 
 // Upload handler
 $upload_msg = '';
@@ -369,7 +370,7 @@ $msg = isset($_GET['msg']) ? $_GET['msg'] : '';
 $allowed_msgs = ['success', 'partial', 'recycled', 'protected', 'mkdir_success', 'mkdir_error', 'newfile_success', 'newfile_error', 'exists', 'upload_exists', 'csrf_error', 'error'];
 if (!in_array($msg, $allowed_msgs, true)) $msg = '';
 
-$parts = $request ? explode('/', trim($request, '/')) : [];
+$parts = $in_subdir ? explode('/', trim($request, '/')) : [];
 
 $items = scandir($full_path);
 if ($items === false) {
@@ -829,7 +830,7 @@ if ($total_size === null) {
             </tr>
         </thead>
         <tbody>
-        <?php if ($request):
+        <?php if ($in_subdir):
             $parent = dirname($request) === '.' ? '' : dirname($request); ?>
             <tr>
                 <td colspan="4">
@@ -842,7 +843,7 @@ if ($total_size === null) {
         <?php endif; ?>
 
         <?php foreach ($dirs as $dir):
-            $rel   = ($request ? $request . '/' : '') . $dir;
+            $rel   = ($in_subdir ? $request . '/' : '') . $dir;
             $mtime = filemtime($full_path . '/' . $dir);
         ?>
             <tr>
@@ -869,7 +870,7 @@ if ($total_size === null) {
 
         <?php foreach ($files as $file):
             $file_full = $full_path . '/' . $file;
-            $rel       = ($request ? $request . '/' : '') . $file;
+            $rel       = ($in_subdir ? $request . '/' : '') . $file;
             $size      = filesize($file_full);
             $mtime     = filemtime($file_full);
             $dl_url    = '/shared/files/' . implode('/', array_map('rawurlencode', explode('/', ltrim($rel, '/'))));

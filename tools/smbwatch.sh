@@ -69,7 +69,7 @@ mkdir -p "$run_dir"
 pid_file="$run_dir/smbstack-smbwatch.pid"
 state_file="$run_dir/smbstack-smbwatch.state"
 
-# validation -use canonical validators directly with =~
+# validation - use canonical validators directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
 UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 

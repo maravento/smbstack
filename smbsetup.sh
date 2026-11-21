@@ -49,7 +49,7 @@ prompt_smb_net_iface() {
 
 check_requirements() {
     local network_command
-    for network_command in ip python3; do
+    for network_command in ip timeout awk python3; do
         command -v "$network_command" >/dev/null 2>&1 \
             || abort "network command '$network_command' missing -abort"
     done
@@ -176,7 +176,7 @@ smbstack_tools="$smbstack_etc/tools"
 smbstack_acl="$smbstack_etc/acl"
 smbstack_env="$smbstack_etc/smbstack.env"
 
-# validation -one variable per thing validated; use directly with =~
+# validation - one variable per thing validated; use directly with =~
 UH_UINT='^(0|[1-9][0-9]*)$'
 UH_ENTRY_NAME='^[A-Za-z0-9]([A-Za-z0-9 ._-]*[A-Za-z0-9_-])?$'
 UH_IPV4='^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])$'
@@ -682,7 +682,7 @@ select_shared_folder() {
                 || warn "cannot set permissions on $(basename "$share_dir") -alert"
         fi
 
-        while IFS= read -r shared_subdir; do
+        while IFS= read -r -d '' shared_subdir; do
             dir_owner=$(stat -c "%U" "$shared_subdir")
             dir_group=$(stat -c "%G" "$shared_subdir")
             dir_mode=$(stat -c "%a" "$shared_subdir")
@@ -694,9 +694,9 @@ select_shared_folder() {
                 chmod 2775 "$shared_subdir" \
                     || warn "cannot set permissions on $(basename "$shared_subdir") -alert"
             fi
-        done < <(find "$share_dir" -mindepth 1 -path "$share_dir/.recycle" -prune -o -type d -print)
+        done < <(find "$share_dir" -mindepth 1 -path "$share_dir/.recycle" -prune -o -type d -print0)
 
-        while IFS= read -r shared_file; do
+        while IFS= read -r -d '' shared_file; do
             file_owner=$(stat -c "%U" "$shared_file")
             file_group=$(stat -c "%G" "$shared_file")
             file_mode=$(stat -c "%a" "$shared_file")
@@ -708,7 +708,7 @@ select_shared_folder() {
                 chmod 664 "$shared_file" \
                     || warn "cannot set permissions on $(basename "$shared_file") -alert"
             fi
-        done < <(find "$share_dir" -mindepth 1 -path "$share_dir/.recycle" -prune -o -type f -print)
+        done < <(find "$share_dir" -mindepth 1 -path "$share_dir/.recycle" -prune -o -type f -print0)
 
         if ! getfacl "$share_dir" 2>/dev/null | grep -q "user:www-data:r-x"; then
             setfacl -m u:www-data:r-x "$share_dir" \
@@ -729,22 +729,22 @@ select_shared_folder() {
             || warn "cannot set owner and group: $(basename "$share_dir") -alert"
         sudo -u "$local_user" mkdir -p "$share_dir/DEMO"
         sudo -u "$local_user" bash -c "echo 'this is a demo file' > '$share_dir/DEMO/demo.txt'"
-        while IFS= read -r shared_subdir; do
+        while IFS= read -r -d '' shared_subdir; do
             if chown "$local_user":sambashare "$shared_subdir"; then
                 chmod 2775 "$shared_subdir" \
                     || warn "cannot set permissions on $(basename "$shared_subdir") -alert"
             else
                 warn "cannot set owner and group: $(basename "$shared_subdir") -alert"
             fi
-        done < <(find "$share_dir" -mindepth 1 -type d -print)
-        while IFS= read -r shared_file; do
+        done < <(find "$share_dir" -mindepth 1 -type d -print0)
+        while IFS= read -r -d '' shared_file; do
             if chown "$local_user":sambashare "$shared_file"; then
                 chmod 664 "$shared_file" \
                     || warn "cannot set permissions on $(basename "$shared_file") -alert"
             else
                 warn "cannot set owner and group: $(basename "$shared_file") -alert"
             fi
-        done < <(find "$share_dir" -mindepth 1 -type f -print)
+        done < <(find "$share_dir" -mindepth 1 -type f -print0)
         setfacl -m u:www-data:r-x "$share_dir" \
             || warn "cannot set ACL on $(basename "$share_dir") -alert"
         setfacl -m mask::r-x "$share_dir" \
@@ -758,6 +758,12 @@ select_shared_folder() {
     # Each channel is precreated and owned by its own writer, so no SMB
     # client needs write access on .recycle itself. The direct mask blocks
     # group write there; the default mask keeps it inside each channel.
+    local recycle_path
+    for recycle_path in "$share_dir/.recycle" \
+        "$share_dir/.recycle/smbguest" "$share_dir/.recycle/www-data"; do
+        [ ! -L "$recycle_path" ] \
+            || abort "$(basename "$recycle_path") is a symbolic link -abort"
+    done
     mkdir -p "$share_dir/.recycle"
     chown www-data:www-data "$share_dir/.recycle" \
         || warn "cannot set owner and group: $(basename "$share_dir/.recycle") -alert"
@@ -839,11 +845,38 @@ check_internet() {
     exit 1
 }
 
+# SCRIPT DEPENDENCIES
+install_script_deps() {
+    local dep_pkg install_status=0
+    local -a missing_pkgs=()
+    for dep_pkg in "$@"; do
+        if [ "$(dpkg-query -W -f='${db:Status-Status}' "$dep_pkg" 2>/dev/null)" != installed ]; then
+            missing_pkgs+=("$dep_pkg")
+        fi
+    done
+    (( ${#missing_pkgs[@]} == 0 )) && return 0
+
+    check_ipv4_interfaces || return 1
+    check_internet || return 1
+    retry_cmd "install packages" env DEBIAN_FRONTEND=noninteractive \
+        apt-get install -y "${missing_pkgs[@]}" || install_status=1
+
+    for dep_pkg in "${missing_pkgs[@]}"; do
+        if [ "$(dpkg-query -W -f='${db:Status-Status}' "$dep_pkg" 2>/dev/null)" != installed ]; then
+            log "WARNING: package $dep_pkg still missing -alert"
+            install_status=1
+        fi
+    done
+    (( install_status == 0 )) || return 1
+    log "INFO: Installed: ${missing_pkgs[*]}"
+}
+
 # DEPENDENCIES
-# Install the missing packages of apt_deps
+# Install the missing packages from the given list, or all on update
 install_deps() {
     local dep_pkg missing_pkgs=()
-    for dep_pkg in "${apt_deps[@]}"; do
+    (( $# > 0 )) || set -- "${apt_deps[@]}"
+    for dep_pkg in "$@"; do
         [[ "$(dpkg-query -W -f='${Status}' "$dep_pkg" 2>/dev/null)" == *"ok installed"* ]] || missing_pkgs+=("$dep_pkg")
     done
     (( ${#missing_pkgs[@]} == 0 )) && return 0
@@ -901,127 +934,161 @@ choose_lan_interface() {
     done
 }
 
-check_static_lan() {
-    local static_result
-    static_result=$(python3 -I - "$1" "$2" <<'STATIC_LAN'
-import configparser
-import fnmatch
-import ipaddress
-import json
-import os
-from pathlib import Path
-import re
-import shutil
-import subprocess
-import sys
+# check persistent static IPv4
+static_ipv4_query() {
+    LC_ALL=C PAGER=cat SYSTEMD_PAGER=cat timeout -k 1s 3s "$@" </dev/null 2>/dev/null
+}
 
-iface, address = sys.argv[1:]
+keyfile_has_ipv4() {
+    local file="$1" uuid="$2" cidr="$3"
+    local line section='' saved_uuid='' method='' value key found=1
+    [[ -f "$file" && ! -L "$file" && -r "$file" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            \[*\]) section="$line" ;;
+            *=*)
+                key="${line%%=*}"
+                value="${line#*=}"
+                case "$section:$key" in
+                    '[connection]:uuid') saved_uuid="$value" ;;
+                    '[ipv4]:method') method="$value" ;;
+                    '[ipv4]:address'*)
+                        if [[ "$key" =~ ^address[0-9]+$ && "${value%%,*}" == "$cidr" ]]; then
+                            found=0
+                        fi
+                        ;;
+                esac
+                ;;
+        esac
+    done < "$file"
+    [[ "$saved_uuid" == "$uuid" && ( "$method" == manual || "$method" == auto ) ]] &&
+        return "$found"
+    return 1
+}
 
-def run(*args):
-    return subprocess.check_output(
-        args, text=True, stderr=subprocess.DEVNULL, timeout=10,
-        env={**os.environ, 'LC_ALL': 'C', 'SYSTEMD_PAGER': 'cat'}).strip()
+netplan_has_ipv4() (
+    local id="$1" cidr="$2" uuid="${3:-}"
+    local kind path entries key value runtime netplan_root dir profile_uuid
+    local -a root_args=()
+    [[ "$id" =~ ^[[:alnum:]_.-]+$ ]] || return 1
+    id=${id//./\\.}
+    for runtime in /run/netplan/*.yaml; do
+        [[ -e "$runtime" || -L "$runtime" ]] || continue
+        [[ -n "$uuid" ]] || return 1
+        netplan_root=$(mktemp -d /tmp/static-ipv4.XXXXXXXX) || return 1
+        trap 'rm -rf -- "$netplan_root"' EXIT
+        for dir in /etc /lib /usr/lib; do
+            [[ -d "$dir/netplan" ]] || continue
+            mkdir -p -- "$netplan_root$dir" || return 1
+            ln -s -- "$dir/netplan" "$netplan_root$dir/netplan" || return 1
+        done
+        root_args=(--root-dir "$netplan_root")
+        break
+    done
+    for kind in ethernets wifis bridges bonds vlans; do
+        path="$kind.$id"
+        if [[ -n "$uuid" ]]; then
+            profile_uuid=$(static_ipv4_query netplan get "${root_args[@]}" "$path.networkmanager.uuid") || continue
+            profile_uuid=${profile_uuid//\"/}
+            [[ "$profile_uuid" == null || -z "$profile_uuid" || "$profile_uuid" == "$uuid" ]] || continue
+        fi
+        entries=$(static_ipv4_query netplan get "${root_args[@]}" "$path.addresses") || entries=
+        while read -r key value; do
+            if [[ "$key" == - && "${value//\"/}" == "$cidr" ]]; then
+                return 0
+            fi
+        done <<< "$entries"
 
-def has_address(values):
-    return any(str(ipaddress.ip_interface(value.split(',')[0]).ip)
-               == address for value in values)
+        [[ -n "$uuid" && "$profile_uuid" == "$uuid" ]] || continue
+        entries=$(static_ipv4_query netplan get "${root_args[@]}" "$path.networkmanager.passthrough") || continue
+        while read -r key value; do
+            value="${value//\"/}"
+            if [[ "$key" =~ ^ipv4[.]address[0-9]+:$ && "${value%%,*}" == "$cidr" ]]; then
+                return 0
+            fi
+        done <<< "$entries"
+    done
+    return 1
+)
 
-def persistent_static():
-    data = json.loads(run('ip', '-j', '-4', 'addr', 'show', 'dev', iface))
-    selected = [entry for link in data for entry in link['addr_info']
-                if entry.get('local') == address]
-    if len(selected) != 1:
-        return 'unknown'
-    entry = selected[0]
-    if entry.get('dynamic') or 'dynamic' in entry.get('flags', []):
-        return 'dhcp'
-
-    nm_active = False
-    if shutil.which('nmcli'):
-        try:
-            uuid = run('nmcli', '-g', 'GENERAL.CON-UUID',
-                       'device', 'show', iface)
-            if uuid and uuid != '--':
-                nm_active = True
-                method = run('nmcli', '-g', 'ipv4.method',
-                             'connection', 'show', uuid)
-                addresses = run('nmcli', '-g', 'ipv4.addresses',
-                                'connection', 'show', uuid)
-                if method != 'manual' or not has_address(
-                        addresses.split(', ')):
-                    return 'unknown'
-                rows = run('nmcli', '-t', '--escape', 'no',
-                           '-f', 'UUID,FILENAME', 'connection', 'show')
-                netplan_profile = False
-                for row in rows.splitlines():
-                    key, _, filename = row.partition(':')
-                    if key != uuid:
-                        continue
-                    netplan_profile = (filename.startswith('/run/') and
-                                       '/netplan-' in filename)
-                    if not filename.startswith('/etc/'):
-                        continue
-                    config = configparser.ConfigParser(interpolation=None)
-                    config.read(filename)
-                    if config.get('ipv4', 'method') != 'manual':
-                        return 'unknown'
-                    values = [value for key, value in config['ipv4'].items()
-                              if re.fullmatch(r'address\d+', key)]
-                    if has_address(values):
-                        return 'static'
-                if not netplan_profile:
-                    return 'unknown'
-        except (OSError, ValueError, configparser.Error,
-                subprocess.SubprocessError):
-            if nm_active:
-                return 'unknown'
-
-    if not shutil.which('netplan'):
-        return 'unknown'
-    # Runtime Netplan overrides cannot prove persistent configuration.
-    if list(Path('/run/netplan').glob('*.yaml')):
-        return 'unknown'
-    if not nm_active:
-        status = run('networkctl', '--no-pager', 'status', iface)
-        if not re.search(r'Network File: .*netplan.*\.network', status):
-            return 'unknown'
-    import yaml
-    try:
-        network = yaml.safe_load(run('netplan', 'get')).get('network', {})
-    except yaml.YAMLError:
-        return 'unknown'
-    for kind in ('ethernets', 'wifis', 'bridges', 'bonds', 'vlans'):
-        for name, config in network.get(kind, {}).items():
-            match = config.get('match', {})
-            if match:
-                mac = data[0].get('permaddr', data[0].get('address', ''))
-                matches = not (set(match) - {'name', 'macaddress'})
-                if 'name' in match:
-                    matches &= fnmatch.fnmatchcase(iface, match['name'])
-                if 'macaddress' in match:
-                    matches &= mac.lower() == match['macaddress'].lower()
-                if config.get('set-name') == iface:
-                    matches = True
-            else:
-                matches = name == iface
-            if matches and has_address(config.get('addresses', [])):
-                return 'static'
-    return 'unknown'
-
-try:
-    print(persistent_static())
-except (OSError, ValueError, KeyError, TypeError, AttributeError,
-        ImportError, subprocess.SubprocessError):
-    print('unknown')
-STATIC_LAN
-    ) || static_result=unknown
-    if [ "${3:-}" = probe ]; then
-        printf '%s\n' "$static_result"
-        return 0
+netplan_profile_id() {
+    local LC_ALL=C
+    local file="$1" uuid="$2" ssid encoded='' char escaped index
+    ssid=$(static_ipv4_query nmcli --escape no -g 802-11-wireless.ssid connection show uuid "$uuid") || ssid=
+    for (( index=0; index<${#ssid}; index++ )); do
+        char=${ssid:index:1}
+        if [[ "$char" =~ [a-zA-Z0-9._~-] || "$char" > $'\177' ]]; then
+            encoded+="$char"
+        else
+            printf -v escaped '%%%02X' "'$char"
+            encoded+="$escaped"
+        fi
+    done
+    if [[ -n "$encoded" ]]; then
+        file=${file%"-$encoded"}
     fi
-    case "$static_result" in
+    printf '%s' "$file"
+}
+
+has_persistent_ipv4() {
+    local iface="$1" cidr="$2" uuid addresses profiles key file status
+    uuid=$(static_ipv4_query nmcli -g GENERAL.CON-UUID device show "$iface") || uuid=
+    if [[ -n "$uuid" && "$uuid" != -- ]]; then
+        addresses=$(static_ipv4_query nmcli -g ipv4.addresses connection show uuid "$uuid") || return 1
+        [[ ",${addresses// /}," == *",$cidr,"* ]] || return 1
+
+        profiles=$(static_ipv4_query nmcli -t --escape no -f UUID,FILENAME connection show) || return 1
+        while IFS=: read -r key file; do
+            [[ "$key" == "$uuid" ]] || continue
+            case "$file" in
+                /etc/NetworkManager/system-connections/*)
+                    keyfile_has_ipv4 "$file" "$uuid" "$cidr"
+                    return "$?"
+                    ;;
+                /run/NetworkManager/system-connections/netplan-*.nmconnection)
+                    file="${file##*/netplan-}"
+                    file=$(netplan_profile_id "${file%.nmconnection}" "$uuid")
+                    netplan_has_ipv4 "$file" "$cidr" "$uuid"
+                    return "$?"
+                    ;;
+            esac
+        done <<< "$profiles"
+        return 1
+    fi
+
+    status=$(static_ipv4_query networkctl --no-pager status "$iface") || return 1
+    while read -r key file; do
+        if [[ "$key $file" =~ ^Network\ File:\ /run/systemd/network/10-netplan-(.+)[.]network$ ]]; then
+            netplan_has_ipv4 "${BASH_REMATCH[1]}" "$cidr"
+            return "$?"
+        fi
+    done <<< "$status"
+    return 1
+}
+
+lan_ipv4_condition() {
+    local iface="$1" address="$2" addresses cidr flags
+    if addresses=$(static_ipv4_query ip -4 -o addr show dev "$iface" scope global); then
+        while read -r _ _ _ cidr flags; do
+            [[ "${cidr%/*}" == "$address" && "$cidr" == */* ]] || continue
+            if [[ " $flags " == *" dynamic "* ]]; then
+                printf 'dynamic'
+                return 0
+            fi
+            if has_persistent_ipv4 "$iface" "$cidr"; then
+                printf 'static'
+                return 0
+            fi
+            break
+        done <<< "$addresses"
+    fi
+    printf 'unverified'
+}
+
+check_static_lan() {
+    case "$(lan_ipv4_condition "$1" "$2")" in
         static) return 0 ;;
-        dhcp)
+        dynamic)
             log "ERROR: [1/2] LAN $1: $2 uses DHCP"
             log "ERROR: [2/2] configure a static LAN IPv4 -abort"
             ;;
@@ -1032,15 +1099,6 @@ STATIC_LAN
     esac
     exit 1
 }
-
-lan_ipv4_condition() {
-    case "$(check_static_lan "$1" "$2" probe)" in
-        static) printf 'static' ;;
-        dhcp) printf 'dynamic' ;;
-        *) printf 'unverified' ;;
-    esac
-}
-
 describe_lan_ipv4() {
     local cidr
     while read -r cidr; do
@@ -1056,7 +1114,7 @@ require_static_lan_candidate() {
     (( ${#candidates[@]} > 1 )) || return 0
     for iface in "${candidates[@]}"; do
         while read -r cidr; do
-            if [ "$(check_static_lan "$iface" "${cidr%/*}" probe)" = static ]; then
+            if [ "$(lan_ipv4_condition "$iface" "${cidr%/*}")" = static ]; then
                 return 0
             fi
         done < <(ip -4 -o addr show dev "$iface" scope global | awk '{print $4}')
@@ -1131,8 +1189,9 @@ confirm_install_replacements() {
     for existing_config in /etc/samba/smb.conf /lib/systemd/system/smbd.service \
         /etc/rsyslog.conf /etc/rsyslog.d/fullaudit.conf \
         /etc/logrotate.d/samba /etc/logrotate.d/rsyslog \
+        /etc/logrotate.d/apache2 /etc/logrotate.d/smbstack /etc/logrotate.d/smbwatch \
         /etc/apache2/ports.conf /etc/apache2/sites-available/smbweb.conf \
-        /etc/php/*/apache2/php.ini; do
+        /etc/php/*/apache2/php.ini /etc/cron.d/smbstack; do
         [ ! -f "$existing_config" ] || existing_configs+=("$existing_config")
     done
     if (( ${#existing_configs[@]} == 0 )); then
@@ -1141,9 +1200,9 @@ confirm_install_replacements() {
     echo "SMBStack will replace or modify these existing configurations:"
     printf ' %s\n' "${existing_configs[@]}"
     echo "Samba, Winbind, Apache and rsyslog services will be configured."
-    read -r -p "Continue with these changes? [y/N]: " answer || answer=""
+    read -r -p "Continue with these changes? [Y/n]: " answer || answer=n
     case "${answer,,}" in
-        y|yes) ;;
+        ""|y|yes) ;;
         *) info "installation cancelled"; log "INFO: smbsetup done"; exit 0 ;;
     esac
     for existing_config in "${existing_configs[@]}"; do
@@ -1191,18 +1250,40 @@ configure_samba_account() {
 # Apache keeps 14 rotations by default; the projects keep 7
 set_apache_logrotate() {
     local apache_rotate="/etc/logrotate.d/apache2"
-    [ -f "$apache_rotate" ] || { warn "apache2 has no logrotate file -alert"; return 0; }
-    if grep -qE '^[[:space:]]*rotate[[:space:]]+7$' "$apache_rotate"; then
-        info "${apache_rotate#/etc/} already rotate 7 -skip"
+    # Replaced, not edited; the package rotation and reload are kept.
+    if [ -f "$apache_rotate" ]; then
+        cp -f "$apache_rotate" "$apache_rotate.bak" \
+            || { warn "cannot back up ${apache_rotate#/etc/} -alert"; return 0; }
+    fi
+    if ! cat > "$apache_rotate" <<'EOF'
+/var/log/apache2/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 640 root adm
+    sharedscripts
+    prerotate
+        if [ -d /etc/logrotate.d/httpd-prerotate ]; then
+            run-parts /etc/logrotate.d/httpd-prerotate
+        fi
+    endscript
+    postrotate
+        if pgrep -f ^/usr/sbin/apache2 > /dev/null; then
+            invoke-rc.d apache2 reload 2>&1 | logger -t apache2.logrotate
+        fi
+    endscript
+}
+EOF
+    then
+        warn "cannot write ${apache_rotate#/etc/} -alert"
         return 0
     fi
-    cp -f "$apache_rotate"{,.bak} &>/dev/null || true
-    sed -i -E 's/^([[:space:]]*)rotate[[:space:]]+[0-9]+$/\1rotate 7/' "$apache_rotate"
-    if grep -qE '^[[:space:]]*rotate[[:space:]]+7$' "$apache_rotate"; then
-        info "${apache_rotate#/etc/} set to rotate 7 -fixed"
-    else
-        warn "cannot set rotate 7 in ${apache_rotate#/etc/} -alert"
-    fi
+    chown root:root "$apache_rotate" && chmod 644 "$apache_rotate" \
+        || { warn "cannot set ${apache_rotate#/etc/} permissions -alert"; return 0; }
+    info "${apache_rotate#/etc/} replaced, previous kept as .bak -fixed"
 }
 
 install_project_logrotate() {
@@ -1234,8 +1315,18 @@ EOF
 do_install() {
     check_requirements install
 
-    # dependency check
-    install_deps
+    local dep_pkg
+    local -a script_deps=() component_pkgs=()
+    for dep_pkg in "${apt_deps[@]}"; do
+        case "$dep_pkg" in
+            apache2|apache2-*|libapache2-mod-php|php|rsyslog|samba|samba-*|smbclient|winbind|cifs-utils)
+                component_pkgs+=("$dep_pkg")
+                ;;
+            *) script_deps+=("$dep_pkg") ;;
+        esac
+    done
+    install_script_deps "${script_deps[@]}" || abort "script dependencies failed -abort"
+    install_deps "${component_pkgs[@]}"
     # apache2-doc breaks after apache2 installs or upgrades; reinstall it always
     retry_cmd "install packages" env DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall apache2-doc \
         || abort "cannot reinstall apache2-doc -abort"
@@ -1414,11 +1505,48 @@ EOF
     chown root:root /etc/rsyslog.d/fullaudit.conf
     usermod -a -G adm www-data
 
-    cp -f /etc/logrotate.d/rsyslog{,.bak} &>/dev/null
-    grep -qE '^[[:space:]]*create 0644 syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
-        sed -i '/sharedscripts/a \ create 0644 syslog adm' /etc/logrotate.d/rsyslog
-    grep -qE '^[[:space:]]*su syslog adm[[:space:]]*$' /etc/logrotate.d/rsyslog || \
-        sed -i '/^{$/a \	su syslog adm' /etc/logrotate.d/rsyslog
+    # Replaced, not edited: repeated runs piled up duplicate su and create
+    # lines. The previous file is kept as .bak in the same path.
+    if [ -f /etc/logrotate.d/rsyslog ]; then
+        cp -f /etc/logrotate.d/rsyslog /etc/logrotate.d/rsyslog.bak \
+            || warn "cannot back up logrotate.d/rsyslog -alert"
+    fi
+    if cat > /etc/logrotate.d/rsyslog <<'EOF'
+/var/log/syslog
+/var/log/messages
+/var/log/daemon.log
+/var/log/debug
+/var/log/mail.info
+/var/log/mail.warn
+/var/log/mail.err
+/var/log/mail.log
+/var/log/kern.log
+/var/log/auth.log
+/var/log/user.log
+/var/log/lpr.log
+/var/log/cron.log
+{
+    su syslog adm
+    rotate 4
+    weekly
+    missingok
+    notifempty
+    compress
+    delaycompress
+    sharedscripts
+    create 0644 syslog adm
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+EOF
+    then
+        chown root:root /etc/logrotate.d/rsyslog
+        chmod 644 /etc/logrotate.d/rsyslog
+        info "logrotate.d/rsyslog replaced, previous kept as .bak -fixed"
+    else
+        warn "cannot write logrotate.d/rsyslog -alert"
+    fi
 
     if ! logrotate -d /etc/logrotate.d/samba >/dev/null 2>&1; then
         warn "logrotate: samba config check failed -alert"
@@ -1506,8 +1634,10 @@ SMBGUEST_CREATED=$smbguest_created
 SMBGUEST_ACCOUNT_CREATED=$smbguest_account_created
 
 # Logs
-# MAX_LOG_LINES: max lines read from the current (non-rotated) audit log
-# file per request, by both smbapi.php and smbaudit-diagnostic.php.
+# MAX_LOG_LINES: maximum audit records returned by smbapi.php per request
+# from the active and rotated logs.
+# smbaudit-diagnostic.php scans the full active log and uses this value
+# to estimate the API read window for that file.
 # NOTE: smbaudit.html's own fetch request uses a fixed limit of 50000 in
 # its JS code, independent of this value -- raising MAX_LOG_LINES here does
 # not change what the audit viewer UI requests.
