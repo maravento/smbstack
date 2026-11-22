@@ -159,9 +159,27 @@ $request = $full_path === $base_real
     : substr($full_path, strlen($base_real) + 1);
 $in_subdir = $request !== '';
 
+function upload_directory($base, $relative, $create) {
+    if (!is_string($relative)) return false;
+    if ($relative === '') return $create ? false : $base;
+    foreach (explode('/', $relative) as $part) {
+        if ($part === '' || $part[0] === '.' || strlen($part) > 255
+            || trim($part) !== $part || strpos($part, '\\') !== false
+            || preg_match('/[\x00-\x1F\x7F]/', $part)) return false;
+        $base .= '/' . $part;
+        if (is_link($base)) return false;
+        if (is_dir($base)) continue;
+        if (!$create || !@mkdir($base, 0775)) return false;
+        chmod($base, 02775);
+        @chgrp($base, 'sambashare');
+        write_audit('mkdirat', $base);
+    }
+    return $base;
+}
+
 // Upload handler
 $upload_msg = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_FILES['upload']) || isset($_POST['upload_tree']))) {
     if (!csrf_valid()) {
         header('Location: ?path=' . urlencode($request) . '&msg=csrf_error');
         exit;
@@ -171,11 +189,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload'])) {
         header('Location: ?path=' . urlencode($request) . '&msg=protected');
         exit;
     }
-    $files     = $_FILES['upload'];
-    $count     = is_array($files['name']) ? count($files['name']) : 1;
+    $tree = isset($_POST['upload_tree']);
+    $files = $_FILES['upload'] ?? [];
+    $count = isset($files['name']) ? (is_array($files['name']) ? count($files['name']) : 1) : 0;
     $succeeded = 0;
     $failed    = 0;
     $skipped   = 0;
+    if ($tree) {
+        $manifest = json_decode(is_string($_POST['upload_tree']) ? $_POST['upload_tree'] : '', true);
+        if (!is_array($manifest['directories'] ?? null) || !is_array($manifest['parents'] ?? null)
+            || count($manifest['parents']) !== $count) {
+            header('Location: ?path=' . urlencode($request) . '&msg=tree_limit');
+            exit;
+        }
+        foreach ($manifest['directories'] as $directory) {
+            if (upload_directory($full_path, $directory, true) === false) {
+                $failed++;
+            } else {
+                $succeeded++;
+            }
+        }
+    }
     for ($i = 0; $i < $count; $i++) {
         $tmp_name  = is_array($files['tmp_name']) ? $files['tmp_name'][$i] : $files['tmp_name'];
         $orig_name = is_array($files['name'])     ? $files['name'][$i]     : $files['name'];
@@ -185,12 +219,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload'])) {
         $safe_name = preg_replace('/[^a-zA-Z0-9._\- ]/', '_', $orig_name);
         $safe_name = strip_dangerous_extension($safe_name);
         if ($safe_name === '') $safe_name = 'upload_' . time() . '_' . $i;
-        $target = $full_path . '/' . $safe_name;
-        if (file_exists($target)) {
+        $parent = $tree ? upload_directory($full_path, $manifest['parents'][$i] ?? null, false) : $full_path;
+        if ($parent === false) { $failed++; continue; }
+        $target = $parent . '/' . $safe_name;
+        if (file_exists($target) || is_link($target)) {
             $skipped++;
             continue;
         }
-        if (move_uploaded_file($tmp_name, $target)) {
+        $uploaded = false;
+        if ($tree) {
+            $input = is_uploaded_file($tmp_name) ? fopen($tmp_name, 'rb') : false;
+            if ($input !== false) {
+                $output = @fopen($target, 'xb');
+                if ($output !== false) {
+                    $copied = stream_copy_to_stream($input, $output);
+                    $closed = fclose($output);
+                    $uploaded = $closed && $copied === fstat($input)['size'];
+                    if (!$uploaded) unlink($target);
+                } elseif (file_exists($target) || is_link($target)) {
+                    fclose($input);
+                    $skipped++;
+                    continue;
+                }
+                fclose($input);
+            }
+        } else {
+            $uploaded = move_uploaded_file($tmp_name, $target);
+        }
+        if ($uploaded) {
             chmod($target, 0664);
             @chgrp($target, 'sambashare');
             write_audit('pwrite', $target);
@@ -199,7 +255,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['upload'])) {
             $failed++;
         }
     }
-    if ($succeeded > 0 && $failed === 0 && $skipped === 0) {
+    if ($tree) {
+        $upload_msg = $failed > 0 || $skipped > 0
+            ? ($succeeded > 0 ? 'tree_partial' : ($failed > 0 ? 'tree_error' : 'upload_exists'))
+            : ($succeeded > 0 ? 'tree_success' : 'tree_error');
+    } elseif ($succeeded > 0 && $failed === 0 && $skipped === 0) {
         $upload_msg = 'success';
     } elseif ($succeeded === 0 && $failed === 0 && $skipped > 0) {
         $upload_msg = 'upload_exists';
@@ -367,7 +427,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['recycle'])) {
 }
 
 $msg = isset($_GET['msg']) ? $_GET['msg'] : '';
-$allowed_msgs = ['success', 'partial', 'recycled', 'protected', 'mkdir_success', 'mkdir_error', 'newfile_success', 'newfile_error', 'exists', 'upload_exists', 'csrf_error', 'error'];
+$allowed_msgs = ['success', 'partial', 'recycled', 'protected', 'mkdir_success', 'mkdir_error', 'newfile_success', 'newfile_error', 'exists', 'upload_exists', 'csrf_error', 'error', 'tree_success', 'tree_partial', 'tree_error', 'tree_limit'];
 if (!in_array($msg, $allowed_msgs, true)) $msg = '';
 
 $parts = $in_subdir ? explode('/', trim($request, '/')) : [];
@@ -730,6 +790,14 @@ if ($total_size === null) {
 
 <?php if ($msg === 'success'): ?>
 <div class="alert alert-success">✅ File uploaded successfully.</div>
+<?php elseif ($msg === 'tree_success'): ?>
+<div class="alert alert-success">✅ Upload complete.</div>
+<?php elseif ($msg === 'tree_partial'): ?>
+<div class="alert alert-warning">⚠️ Some items could not be uploaded or already exist.</div>
+<?php elseif ($msg === 'tree_error'): ?>
+<div class="alert alert-error">❌ Folder upload failed. Check folder names, permissions and file sizes.</div>
+<?php elseif ($msg === 'tree_limit'): ?>
+<div class="alert alert-error">❌ The upload was incomplete. Check the server file count and size limits.</div>
 <?php elseif (($msg ?? '') === 'partial'): ?>
 <div class="alert alert-warning">⚠️ Some files were uploaded, but others failed.</div>
 <?php elseif ($msg === 'recycled'): ?>
@@ -774,14 +842,14 @@ if ($total_size === null) {
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
         <label class="btn btn-secondary" style="cursor:pointer;margin:0">
             📂 Select Files
-            <input type="file" name="upload[]" id="upload-input" required multiple style="display:none" onchange="updateUploadLabel(this)">
+            <input type="file" name="upload[]" id="upload-input" required multiple style="display:none" onchange="resetUploadTree(this)">
         </label>
         <span id="upload-filenames" style="color:#6c757d;font-size:var(--fs-sm);flex:1"></span>
         <button type="submit" class="btn btn-success" id="btn-send">⬆️ Send</button>
         <button type="button" class="btn btn-secondary" onclick="document.getElementById('upload-area').classList.remove('open')">✖️ Cancel</button>
     </form>
     <div class="upload-progress" id="upload-progress"><div class="upload-progress-bar" id="upload-progress-bar"></div></div>
-    <div class="upload-hint">or drag &amp; drop files here</div>
+    <div class="upload-hint">or drag &amp; drop files and folders here</div>
 </div>
 
 <div class="mkdir-area" id="mkdir-area">
@@ -958,13 +1026,77 @@ function updateUploadLabel(input) {
         : n ? '✔️ ' + n + ' files selected' : '';
 }
 
-function handleUploadDrop(e) {
+var uploadTree = null;
+
+function resetUploadTree(input) {
+    uploadTree = null;
+    input.required = true;
+    updateUploadLabel(input);
+}
+
+async function readUploadDirectory(entry, parent, tree) {
+    var path = parent ? parent + '/' + entry.name : entry.name;
+    tree.directories.push(path);
+    var reader = entry.createReader();
+    while (true) {
+        var entries = await new Promise(function(resolve, reject) {
+            reader.readEntries(resolve, reject);
+        });
+        if (!entries.length) return;
+        for (var child of entries) {
+            if (child.isDirectory) {
+                await readUploadDirectory(child, path, tree);
+            } else if (child.isFile) {
+                var file = await new Promise(function(resolve, reject) {
+                    child.file(resolve, reject);
+                });
+                tree.files.push(file);
+                tree.parents.push(path);
+            }
+        }
+    }
+}
+
+async function handleUploadDrop(e) {
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
     var input = document.getElementById('upload-input');
-    if (e.dataTransfer && e.dataTransfer.files.length) {
-        input.files = e.dataTransfer.files;
-        updateUploadLabel(input);
+    var btn = document.getElementById('btn-send');
+    if (!e.dataTransfer || btn.disabled) return;
+    var items = Array.from(e.dataTransfer.items);
+    var entries = items.map(function(item) { return item.webkitGetAsEntry?.(); });
+    if (!entries.some(function(entry) { return entry?.isDirectory; })) {
+        if (e.dataTransfer.files.length) {
+            input.files = e.dataTransfer.files;
+            resetUploadTree(input);
+        }
+        return;
+    }
+
+    var files = items.map(function(item, index) {
+        return entries[index]?.isDirectory ? null : item.getAsFile();
+    }).filter(Boolean);
+    var tree = { directories: [], parents: [], files: [] };
+    btn.disabled = true;
+    input.disabled = true;
+    try {
+        for (var entry of entries) {
+            if (entry?.isDirectory) await readUploadDirectory(entry, '', tree);
+        }
+        for (var file of files) {
+            tree.files.push(file);
+            tree.parents.push('');
+        }
+        input.value = '';
+        input.required = false;
+        uploadTree = tree;
+        document.getElementById('upload-filenames').textContent =
+            tree.directories.length + ' folders, ' + tree.files.length + ' files selected';
+    } catch (error) {
+        alert('Could not read the dropped folder. Select it again and retry.');
+    } finally {
+        input.disabled = false;
+        btn.disabled = false;
     }
 }
 
@@ -975,8 +1107,17 @@ function handleUploadSubmit(e) {
     var progressWrap = document.getElementById('upload-progress');
     var progressBar = document.getElementById('upload-progress-bar');
 
+    var data = new FormData(form);
+    var url = new URL(window.location.href);
+    url.searchParams.delete('msg');
+    var tree = uploadTree;
+    if (tree) {
+        data.delete('upload[]');
+        data.append('upload_tree', JSON.stringify({ directories: tree.directories, parents: tree.parents }));
+        for (var file of tree.files) data.append('upload[]', file);
+    }
     var xhr = new XMLHttpRequest();
-    xhr.open('POST', window.location.href, true);
+    xhr.open('POST', url.href, true);
     xhr.upload.onprogress = function(evt) {
         if (evt.lengthComputable) {
             progressBar.style.width = Math.round((evt.loaded / evt.total) * 100) + '%';
@@ -986,16 +1127,26 @@ function handleUploadSubmit(e) {
     btn.textContent = '⏳ Uploading...';
     progressWrap.style.display = 'block';
     progressBar.style.width = '0%';
-    xhr.onload = function() {
-        window.location = xhr.responseURL || window.location.href;
-    };
-    xhr.onerror = function() {
+    function uploadFailed(message) {
         btn.disabled = false;
         btn.textContent = '⬆️ Send';
         progressWrap.style.display = 'none';
-        alert('Upload failed. Please check your connection and try again.');
+        alert(message);
+    }
+    xhr.onload = function() {
+        if (xhr.status === 413 || (tree && xhr.status === 200
+            && (!xhr.responseURL || !new URL(xhr.responseURL).searchParams.has('msg')))) {
+            uploadFailed('Upload rejected. Check the server upload size and file count limits.');
+        } else if (xhr.status >= 400) {
+            uploadFailed('Upload failed (HTTP ' + xhr.status + ').');
+        } else {
+            window.location = xhr.responseURL || window.location.href;
+        }
     };
-    xhr.send(new FormData(form));
+    xhr.onerror = function() {
+        uploadFailed('Upload failed. Please check your connection and try again.');
+    };
+    xhr.send(data);
     return false;
 }
 
