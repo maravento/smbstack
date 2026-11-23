@@ -1018,15 +1018,75 @@ EOF
 <table width="100%">
   <tr>
     <td style="width: 50%; vertical-align: top;">
-      <ul> <li>Inside a subfolder, the toolbar allows uploading one or more files, creating folders and reloading the view. Each operation is recorded in the audit log together with the client's IP address.</li> <li>Images and PDF files open in a modal through the <strong>Preview</strong> button, without being downloaded. For the remaining file types, the <strong>View</strong> button is kept, which opens the file in a new tab.</li> <li>Use the file selector to upload files, or drop files and folders on the upload panel. Folder uploads preserve the folder structure, including empty folders, and keep existing files. A progress bar reports the state of the transfer.</li> <li>Each folder upload uses one request. PHP limits the size of each file (<code>upload_max_filesize</code>), the total request size (<code>post_max_size</code>) and the number of files per request (<code>max_file_uploads</code>). The local PHP configuration reports <code>2M</code> per file, <code>8M</code> per request and 20 files per request. The effective limits depend on the server configuration.</li> <li>The panel can be installed as a Progressive Web App (PWA) on Chrome, Edge and Safari. Offline, only the app shell is available; access to files requires a connection. Firefox Desktop does not offer the installation option, so the panel works there as a regular web page.</li> </ul>
+      <ul> <li>Inside a subfolder, the toolbar allows uploading one or more files, creating folders and reloading the view. Each operation is recorded in the audit log together with the client's IP address.</li> <li>Images and PDF files open in a modal through the <strong>Preview</strong> button, without being downloaded. For the remaining file types, the <strong>View</strong> button is kept, which opens the file in a new tab.</li> <li>Use the file selector to upload files, or drop files and folders on the upload panel. Folder uploads preserve the folder structure, including empty folders, and keep existing files. A progress bar reports the state of the transfer.</li> <li>Each folder upload uses one request. PHP limits the size of each file (<code>upload_max_filesize</code>), the total request size (<code>post_max_size</code>) and the number of files per request (<code>max_file_uploads</code>). The standard PHP configuration ships with <code>2M</code> per file, <code>8M</code> per request and 20 files per request. The effective limits depend on the server configuration. See Upload Limits.</li> <li>The panel can be installed as a Progressive Web App (PWA) on Chrome, Edge and Safari. Offline, only the app shell is available; access to files requires a connection. Firefox Desktop does not offer the installation option, so the panel works there as a regular web page.</li> </ul>
     </td>
     <td style="width: 50%; vertical-align: top;">
-      <ul> <li>Dentro de una subcarpeta, la barra de herramientas permite subir uno o varios archivos, crear carpetas y recargar la vista. Cada operación queda registrada en el registro de auditoría junto con la IP del cliente.</li> <li>Las imágenes y los archivos PDF se abren en un modal mediante el botón <strong>Preview</strong>, sin descargarlos. Para los demás tipos de archivo se mantiene el botón <strong>View</strong>, que abre el archivo en una pestaña nueva.</li> <li>Usa el selector para subir archivos o suelta archivos y carpetas sobre el panel de subida. La subida conserva la estructura, incluidas las carpetas vacías, y respeta los archivos existentes. Una barra de progreso informa del estado de la transferencia.</li> <li>Cada subida de carpeta usa una sola petición. PHP limita el tamaño de cada archivo (<code>upload_max_filesize</code>), el tamaño total de la petición (<code>post_max_size</code>) y la cantidad de archivos por petición (<code>max_file_uploads</code>). La configuración local de PHP indica <code>2M</code> por archivo, <code>8M</code> por petición y 20 archivos por petición. Los límites efectivos dependen de la configuración del servidor.</li> <li>Puedes instalar el panel como aplicación web progresiva (PWA) en Chrome, Edge y Safari. Sin conexión solo queda disponible la estructura de la aplicación; para acceder a los archivos se necesita conexión. Firefox para escritorio no ofrece la opción de instalación, por lo que el panel funciona allí como una página web normal.</li> </ul>
+      <ul> <li>Dentro de una subcarpeta, la barra de herramientas permite subir uno o varios archivos, crear carpetas y recargar la vista. Cada operación queda registrada en el registro de auditoría junto con la IP del cliente.</li> <li>Las imágenes y los archivos PDF se abren en un modal mediante el botón <strong>Preview</strong>, sin descargarlos. Para los demás tipos de archivo se mantiene el botón <strong>View</strong>, que abre el archivo en una pestaña nueva.</li> <li>Usa el selector para subir archivos o suelta archivos y carpetas sobre el panel de subida. La subida conserva la estructura, incluidas las carpetas vacías, y respeta los archivos existentes. Una barra de progreso informa del estado de la transferencia.</li> <li>Cada subida de carpeta usa una sola petición. PHP limita el tamaño de cada archivo (<code>upload_max_filesize</code>), el tamaño total de la petición (<code>post_max_size</code>) y la cantidad de archivos por petición (<code>max_file_uploads</code>). La configuración estándar de PHP establece <code>2M</code> por archivo, <code>8M</code> por petición y 20 archivos por petición. Los límites efectivos dependen de la configuración del servidor. Consulta Upload Limits.</li> <li>Puedes instalar el panel como aplicación web progresiva (PWA) en Chrome, Edge y Safari. Sin conexión solo queda disponible la estructura de la aplicación; para acceder a los archivos se necesita conexión. Firefox para escritorio no ofrece la opción de instalación, por lo que el panel funciona allí como una página web normal.</li> </ul>
     </td>
   </tr>
 </table>
 
 [![smbstack-files](./img/smbstack-files.png)](https://github.com/maravento/smbstack)
+
+##### Upload Limits
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      The web panel supports uploading individual files and entire folders. By default, each request accepts up to 20 files, with a limit of 2 MiB per file and 8 MiB per request. Files in subfolders count toward these limits. To raise the limits for SMBStack, edit the three example values in the command below.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      El panel web permite subir archivos sueltos y carpetas completas. Por defecto, cada petición admite hasta 20 archivos, con un límite de 2 MiB por archivo y 8 MiB por petición. Los archivos de las subcarpetas cuentan para esos límites. Para aumentarlos en SMBStack, cambia los tres valores de ejemplo del comando.
+    </td>
+  </tr>
+</table>
+
+| Value / Valor | Description | Descripción |
+|---:|---|---|
+| 32 MiB | Maximum size of each file. | Tamaño máximo de cada archivo. |
+| 64 MiB | Maximum size of the entire request, including all files and form data. Use a value greater than the per-file limit. | Tamaño máximo de toda la petición, incluidos los archivos y los datos del formulario. Usa un valor mayor que el límite por archivo. |
+| 50 | Maximum number of files per request, including files in subfolders. | Cantidad máxima de archivos por petición, incluidos los de las subcarpetas. |
+
+```bash
+upload_file_mib=32
+upload_request_mib=64
+upload_file_count=50
+
+sudo tee /etc/smbstack/upload-limits.conf >/dev/null <<EOF
+php_admin_flag file_uploads On
+php_admin_value upload_max_filesize ${upload_file_mib}M
+php_admin_value post_max_size ${upload_request_mib}M
+php_admin_value max_file_uploads ${upload_file_count}
+LimitRequestBody $((upload_request_mib * 1024 * 1024))
+EOF
+sudo apache2ctl configtest && sudo systemctl reload apache2
+```
+
+> If the limits do not take effect on an existing installation, open `/etc/apache2/sites-available/smbweb.conf` with `sudoedit`. Inside `<Location /shared>`, add `IncludeOptional /etc/smbstack/upload-limits.conf` before `</Location>` if missing. Validate the configuration and reload Apache using the last line of the command. These limits apply to uploads.
+>
+> Si los límites no se aplican en una instalación existente, abre `/etc/apache2/sites-available/smbweb.conf` con `sudoedit`. Dentro de `<Location /shared>`, añade `IncludeOptional /etc/smbstack/upload-limits.conf` antes de `</Location>` si falta. Valida la configuración y recarga Apache con la última línea del comando. Estos límites se aplican a las subidas.
+
+##### Download Limits
+
+<table width="100%">
+  <tr>
+    <td style="width: 50%; vertical-align: top;">
+      The web panel downloads one file at a time. You can select several files and start all of their downloads with one button.
+    </td>
+    <td style="width: 50%; vertical-align: top;">
+      El panel web descarga los archivos uno a uno. Puedes seleccionar varios e iniciar sus descargas con un solo botón.
+    </td>
+  </tr>
+</table>
+
+| Button / Botón | Description | Descripción |
+|---|---|---|
+| `Download` | Click the button in the row of the file you want to download. | Pulsa el botón en la fila del archivo que quieres descargar. |
+| `Download Selected` | Mark the checkbox next to each file and click the button. Each selected file downloads separately. | Marca la casilla junto a cada archivo y pulsa el botón. Los archivos seleccionados se descargan uno a uno. |
+
+> Your browser may ask you to allow multiple downloads.
+>
+> El navegador puede pedirte permiso para iniciar varias descargas.
 
 #### SMBreport
 

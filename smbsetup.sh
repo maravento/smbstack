@@ -30,6 +30,39 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+install_php_hardening() (
+    local conf_dir="${1%/*}/conf.d" target staged
+    [ -d "$conf_dir" ] || return 1
+    target="$conf_dir/99-project-php-hardening.ini"
+    staged=$(mktemp -- "$target.XXXXXXXX") || return 1
+    trap 'rm -f -- "$staged"' EXIT
+    cat > "$staged" <<'PHP_HARDENING' || return 1
+expose_php = Off
+display_errors = Off
+display_startup_errors = Off
+log_errors = On
+allow_url_include = Off
+enable_dl = Off
+session.use_strict_mode = 1
+session.use_only_cookies = 1
+session.cookie_httponly = 1
+session.upload_progress.enabled = 0
+file_uploads = Off
+upload_max_filesize = 2M
+post_max_size = 8M
+max_file_uploads = 20
+PHP_HARDENING
+    [ ! -L "$target" ] || return 1
+    if [ -e "$target" ]; then
+        [ -f "$target" ] || return 1
+        if cmp -s -- "$staged" "$target" && [ "$(stat -c %a -- "$target")" = 644 ]; then
+            return 0
+        fi
+        [ -f "$target.bak" ] || cp -p -- "$target" "$target.bak" || return 1
+    fi
+    chmod 0644 -- "$staged" && mv -fT -- "$staged" "$target"
+)
+
 prompt_smb_net_iface() {
     choose_lan_interface "${SMBSTACK_IFACE:-}"
     iface_answer="$lan_iface_answer"
@@ -2088,14 +2121,7 @@ EOF
 
     for apache_php_ini in /etc/php/*/apache2/php.ini; do
         [ -f "$apache_php_ini" ] || continue
-        if ! { [ -f "${apache_php_ini}.bak" ] || cp -p "$apache_php_ini" "${apache_php_ini}.bak"; }; then
-            abort "cannot back up $apache_php_ini -abort"
-        fi
-        if grep -Eq '^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=' "$apache_php_ini"; then
-            sed -i 's/^[[:space:]]*;*[[:space:]]*session\.upload_progress\.enabled[[:space:]]*=.*/session.upload_progress.enabled = 0/' "$apache_php_ini" || abort "cannot edit $apache_php_ini -abort"
-        else
-            printf '\nsession.upload_progress.enabled = 0\n' >> "$apache_php_ini" || abort "cannot edit $apache_php_ini -abort"
-        fi
+        install_php_hardening "$apache_php_ini" || abort "cannot edit $apache_php_ini -abort"
     done
 
     if ! systemctl restart smbd winbind rsyslog apache2; then

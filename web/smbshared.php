@@ -723,6 +723,7 @@ if ($total_size === null) {
         tr:hover td { background: #f8fafc; }
 
         .name-cell { display: flex; align-items: center; gap: var(--sp-2); }
+        #download-selected:disabled { opacity: .55; cursor: not-allowed; }
         .name-cell a { color: #1e293b; text-decoration: none; }
         .name-cell a:hover { color: #2563eb; }
         .dir-link { color: #374151 !important; font-weight: 500; }
@@ -833,6 +834,9 @@ if ($total_size === null) {
         <button class="btn btn-success" onclick="document.getElementById('upload-area').classList.toggle('open');document.getElementById('mkdir-area').classList.remove('open');document.getElementById('newfile-area').classList.remove('open')">⬆️ Upload</button>
         <button class="btn btn-secondary" onclick="document.getElementById('mkdir-area').classList.toggle('open');document.getElementById('upload-area').classList.remove('open');document.getElementById('newfile-area').classList.remove('open')">📁 New Folder</button>
         <button class="btn btn-secondary" onclick="document.getElementById('newfile-area').classList.toggle('open');document.getElementById('upload-area').classList.remove('open');document.getElementById('mkdir-area').classList.remove('open')">📄 New File</button>
+        <?php if ($files): ?>
+        <button type="button" class="btn btn-success" id="download-selected" onclick="downloadSelectedFiles()" disabled>⬇️ Download Selected</button>
+        <?php endif; ?>
         <a class="btn btn-secondary" href="/audit/">📊 Audit</a>
     </div>
 </div>
@@ -841,12 +845,12 @@ if ($total_size === null) {
     <form method="POST" enctype="multipart/form-data" id="upload-form" onsubmit="return handleUploadSubmit(event)">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
         <label class="btn btn-secondary" style="cursor:pointer;margin:0">
-            📂 Select Files
+            📂 Select Files or Folder
             <input type="file" name="upload[]" id="upload-input" required multiple style="display:none" onchange="resetUploadTree(this)">
         </label>
         <span id="upload-filenames" style="color:#6c757d;font-size:var(--fs-sm);flex:1"></span>
         <button type="submit" class="btn btn-success" id="btn-send">⬆️ Send</button>
-        <button type="button" class="btn btn-secondary" onclick="document.getElementById('upload-area').classList.remove('open')">✖️ Cancel</button>
+        <button type="button" class="btn btn-secondary" onclick="cancelUpload()">✖️ Cancel</button>
     </form>
     <div class="upload-progress" id="upload-progress"><div class="upload-progress-bar" id="upload-progress-bar"></div></div>
     <div class="upload-hint">or drag &amp; drop files and folders here</div>
@@ -949,6 +953,7 @@ if ($total_size === null) {
             <tr>
                 <td>
                     <div class="name-cell">
+                        <input type="checkbox" class="download-choice" aria-label="Select <?= htmlspecialchars($file) ?> for download" onchange="updateDownloadSelection()">
                         <span><?= get_icon($file) ?></span>
                         <a href="<?= htmlspecialchars($dl_url) ?>" target="_blank"><?= htmlspecialchars($file) ?></a>
                     </div>
@@ -1019,6 +1024,17 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closePreview();
 });
 
+function updateDownloadSelection() {
+    document.getElementById('download-selected').disabled =
+        !document.querySelector('.download-choice:checked');
+}
+
+function downloadSelectedFiles() {
+    document.querySelectorAll('.download-choice:checked').forEach(function(choice) {
+        choice.closest('tr').querySelector('a[download]').click();
+    });
+}
+
 function updateUploadLabel(input) {
     var n = input.files.length;
     document.getElementById('upload-filenames').textContent = n === 1
@@ -1027,6 +1043,7 @@ function updateUploadLabel(input) {
 }
 
 var uploadTree = null;
+var readingUploadTree = null;
 
 function resetUploadTree(input) {
     uploadTree = null;
@@ -1034,16 +1051,30 @@ function resetUploadTree(input) {
     updateUploadLabel(input);
 }
 
+function cancelUpload() {
+    var input = document.getElementById('upload-input');
+    if (readingUploadTree) {
+        readingUploadTree = null;
+        input.disabled = false;
+        document.getElementById('btn-send').disabled = false;
+    }
+    input.value = '';
+    resetUploadTree(input);
+    document.getElementById('upload-area').classList.remove('open');
+}
+
 async function readUploadDirectory(entry, parent, tree) {
+    if (readingUploadTree !== tree) return;
     var path = parent ? parent + '/' + entry.name : entry.name;
     tree.directories.push(path);
     var reader = entry.createReader();
-    while (true) {
+    while (readingUploadTree === tree) {
         var entries = await new Promise(function(resolve, reject) {
             reader.readEntries(resolve, reject);
         });
         if (!entries.length) return;
         for (var child of entries) {
+            if (readingUploadTree !== tree) return;
             if (child.isDirectory) {
                 await readUploadDirectory(child, path, tree);
             } else if (child.isFile) {
@@ -1077,12 +1108,14 @@ async function handleUploadDrop(e) {
         return entries[index]?.isDirectory ? null : item.getAsFile();
     }).filter(Boolean);
     var tree = { directories: [], parents: [], files: [] };
+    readingUploadTree = tree;
     btn.disabled = true;
     input.disabled = true;
     try {
         for (var entry of entries) {
             if (entry?.isDirectory) await readUploadDirectory(entry, '', tree);
         }
+        if (readingUploadTree !== tree) return;
         for (var file of files) {
             tree.files.push(file);
             tree.parents.push('');
@@ -1093,10 +1126,15 @@ async function handleUploadDrop(e) {
         document.getElementById('upload-filenames').textContent =
             tree.directories.length + ' folders, ' + tree.files.length + ' files selected';
     } catch (error) {
-        alert('Could not read the dropped folder. Select it again and retry.');
+        if (readingUploadTree === tree) {
+            alert('Could not read the dropped folder. Select it again and retry.');
+        }
     } finally {
-        input.disabled = false;
-        btn.disabled = false;
+        if (readingUploadTree === tree) {
+            readingUploadTree = null;
+            input.disabled = false;
+            btn.disabled = false;
+        }
     }
 }
 
@@ -1149,6 +1187,10 @@ function handleUploadSubmit(e) {
     xhr.send(data);
     return false;
 }
+
+window.addEventListener('pageshow', function() {
+    if (document.getElementById('download-selected')) updateDownloadSelection();
+});
 
 function initTheme() {
     var saved = '';
