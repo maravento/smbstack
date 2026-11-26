@@ -688,6 +688,12 @@ PY
     fi
 }
 
+query_port_listeners() {
+    local port_error
+    port_error=$(ss -lnH "--$1" "sport = :$2" 2>&1 >&3) || return 1
+    [[ "$port_error" != *[![:space:]]* ]]
+} 3>&1
+
 check_repo() {
     local missing_dir=0
     for repo_subdir in "$acl_dir" "$conf_dir" "$tools_dir" "$web_dir"; do
@@ -1741,7 +1747,7 @@ confirm_install_replacements() {
         *) info "installation cancelled"; log "INFO: smbsetup done"; exit 0 ;;
     esac
     for existing_config in "${existing_configs[@]}"; do
-        cp -p -- "$existing_config" "${existing_config}.bak" \
+        [ -f "${existing_config}.bak" ] || cp -p -- "$existing_config" "${existing_config}.bak" \
             || abort "cannot back up $(basename "$existing_config") -abort"
     done
 }
@@ -1786,7 +1792,7 @@ configure_samba_account() {
 set_apache_logrotate() {
     local apache_rotate="/etc/logrotate.d/apache2"
     # Replaced, not edited; the package rotation and reload are kept.
-    if [ -f "$apache_rotate" ]; then
+    if [ -f "$apache_rotate" ] && [ ! -f "$apache_rotate.bak" ]; then
         cp -f "$apache_rotate" "$apache_rotate.bak" \
             || { warn "cannot back up ${apache_rotate#/etc/} -alert"; return 0; }
     fi
@@ -1908,7 +1914,7 @@ do_install() {
     chmod 1775 /var/lib/samba/usershares/
     mkdir -p /var/log/samba
 
-    cp -f /lib/systemd/system/smbd.service{,.bak} &>/dev/null
+    [ -f /lib/systemd/system/smbd.service.bak ] || cp -f /lib/systemd/system/smbd.service{,.bak} &>/dev/null
     sed -i 's/ \$SMBDOPTIONS//' /lib/systemd/system/smbd.service
 
     # samba web viewer and tools
@@ -1953,7 +1959,7 @@ do_install() {
     done
 
     # logrotate
-    cp -f /etc/logrotate.d/samba{,.bak} &>/dev/null
+    [ -f /etc/logrotate.d/samba.bak ] || cp -f /etc/logrotate.d/samba{,.bak} &>/dev/null
     cat > /etc/logrotate.d/samba <<'EOF'
 /var/log/samba/log.audit {
     weekly
@@ -2009,7 +2015,7 @@ EOF
             || warn "smb.conf: cannot set hosts allow -alert"
     }
 
-    if [ -f /etc/samba/smb.conf ]; then
+    if [ -f /etc/samba/smb.conf ] && [ ! -f /etc/samba/smb.conf.bak ]; then
         cp -f /etc/samba/smb.conf{,.bak} \
             || abort "cannot back up smb.conf -abort"
         info "smb.conf backup saved as smb.conf.bak"
@@ -2038,7 +2044,7 @@ EOF
         "$smbstack_acl/commonveto.txt"
 
     # rsyslog
-    cp -f /etc/rsyslog.conf{,.bak} &>/dev/null
+    [ -f /etc/rsyslog.conf.bak ] || cp -f /etc/rsyslog.conf{,.bak} &>/dev/null
     sed -i -E 's/^(\s*(\$FileOwner|\$FileGroup|\$FileCreateMode|\$DirCreateMode|\$Umask|\$PrivDropToUser|\$PrivDropToGroup)\b.*)/#\1/' /etc/rsyslog.conf
     cp -f "$conf_dir/fullaudit.conf" /etc/rsyslog.d/fullaudit.conf
     chmod 644 /etc/rsyslog.d/fullaudit.conf
@@ -2047,7 +2053,7 @@ EOF
 
     # Replaced, not edited: repeated runs piled up duplicate su and create
     # lines. The previous file is kept as .bak in the same path.
-    if [ -f /etc/logrotate.d/rsyslog ]; then
+    if [ -f /etc/logrotate.d/rsyslog ] && [ ! -f /etc/logrotate.d/rsyslog.bak ]; then
         cp -f /etc/logrotate.d/rsyslog /etc/logrotate.d/rsyslog.bak \
             || warn "cannot back up logrotate.d/rsyslog -alert"
     fi
@@ -2404,23 +2410,7 @@ do_status() {
     echo "=== Apache Ports ==="
     for probe_port in 3092; do
         local port_listeners
-        if ! port_listeners=$(python3 - tcp "$probe_port" <<'PY'
-import subprocess
-import sys
-
-try:
-    result = subprocess.run(
-        ["ss", "-lnH", f"--{sys.argv[1]}", f"sport = :{sys.argv[2]}"],
-        capture_output=True,
-        text=True,
-    )
-except OSError:
-    sys.exit(1)
-if result.returncode != 0 or result.stderr.strip():
-    sys.exit(1)
-sys.stdout.write(result.stdout)
-PY
-        ); then
+        if ! port_listeners=$(query_port_listeners tcp "$probe_port"); then
             echo ":$probe_port UNKNOWN"
         elif [ -n "$port_listeners" ]; then
             echo ":$probe_port OPEN"
